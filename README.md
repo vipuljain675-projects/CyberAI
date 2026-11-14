@@ -6,73 +6,55 @@
 [![LightGBM](https://img.shields.io/badge/LightGBM-GBDT%20Signature-green.svg)](#)
 [![Rust 2021](https://img.shields.io/badge/Rust-Wire--Speed%20Sniffer-black.svg?logo=rust&logoColor=white)](#)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Production%20Serving-009688.svg?logo=fastapi&logoColor=white)](#)
-[![Architecture](https://img.shields.io/badge/Architecture-Dual--Tier%20Hybrid-purple.svg)](#)
+[![libpcap](https://img.shields.io/badge/libpcap-Real%20Wire%20Capture-orange.svg)](#)
 
 ---
 
 ## 🎯 Executive Summary & Problem Statement
 
-In enterprise telecommunications and cloud infrastructure, traditional signature-based firewalls (like AWS WAF or Snort) suffer from a fundamental architectural flaw: **they can only detect attacks they have seen before**. When an advanced adversary launches a **Zero-Day exploit (unseen payload)**, signature matching fails completely, allowing lateral network infiltration.
+Traditional signature-based firewalls (AWS WAF, Snort) can only detect attacks they have seen before. When an adversary launches a **Zero-Day exploit**, signature matching fails completely.
 
-**NIDS 2.0** solves this paradigm through a **Dual-Tier Hybrid AI Defense System**:
-1. **Tier-1 (Supervised - LightGBM GBDT):** Identifies known cyberattack signatures (`DoS`, `PortScan`, `BruteForce`) with sub-millisecond classification latency.
-2. **Tier-2 (Unsupervised - Deep Autoencoder):** Trained strictly on the manifold of normal (`BENIGN`) telecommunication traffic. When novel Zero-Day threats arrive, the neural network fails to compress/reconstruct them, triggering instant manifold departure and automated quarantine.
-3. **Latent Prototypes (KMeans Centroids):** 8 geometric centroids in 16-D bottleneck space compute real-time novelty distances for forensic confidence scoring.
-4. **Wire-Speed Data Plane (Rust):** Microsecond packet capture and bidirectional flow aggregation without Garbage Collection overhead.
+**NIDS 2.0** solves this through a **Dual-Tier Hybrid AI Defense System**:
+1. **Tier-1 (LightGBM GBDT):** Identifies known signatures (`DoS`, `PortScan`, `BruteForce`) in sub-millisecond latency.
+2. **Tier-2 (Deep Autoencoder):** Trained only on BENIGN traffic. Novel Zero-Day threats fail reconstruction, triggering quarantine.
+3. **Latent Prototypes (KMeans):** 8 centroids in 16-D space for real-time novelty scoring.
+4. **Wire-Speed Data Plane (Rust + libpcap):** Microsecond packet capture from physical NIC without Python GIL overhead.
 
 ---
 
 ## 🏗️ System Architecture
 
-```mermaid
-flowchart TD
-    subgraph DataPlane ["🦀 Wire Data Plane (Rust Engine)"]
-        NIC["Physical Network Interface (eth0 / en0)"] -->|"Zero-Copy Raw Sockets"| Sniffer["Rust Packet Sniffer & Flow Aggregator"]
-        Sniffer -->|"5-Tuple Flow Aggregation"| FlowStream["Raw 77-Metric CICIDS Flow Records"]
-    end
-
-    subgraph ControlPlane ["🐍 AI Inference Engine (FastAPI & PyTorch)"]
-        FlowStream -->|"Async HTTP Stream"| Adapter["Feature Adapter (backend/adapter.py)"]
-        Adapter -->|"Derive 14 Interaction Metrics & RobustScale"| ScaledVector["91-Dimensional Feature Vector [-10, 10]"]
-
-        ScaledVector --> Tier1{"Tier-1: LightGBM Signature Match?"}
-
-        Tier1 -->|"Confidence >= 70% Attack"| KnownThreat["🚨 KNOWN ATTACK DETECTED (DoS / PortScan / BruteForce)<br/>Action: BLOCK_FLOW (iptables DROP)"]
-        
-        Tier1 -->|"Classified as BENIGN / Uncertain"| Tier2["Tier-2: Deep Autoencoder (8 Layers)"]
-        
-        Tier2 -->|"Reconstruction Pass"| MSECalc["Calculate Reconstruction MSE Error"]
-        MSECalc --> AnomalyCheck{"MSE >= Tau Threshold (0.0687)?"}
-
-        AnomalyCheck -->|"YES (Departure >= 200x)"| ZeroDay["🚨 NOVEL ZERO-DAY THREAT DETECTED<br/>Action: QUARANTINE_HOST (VLAN Isolation)"]
-        AnomalyCheck -->|"NO (Conforms to Manifold)"| SafeTraffic["🟢 BENIGN NORMAL TRAFFIC<br/>Action: ALLOW"]
-
-        Tier2 -->|"16-D Latent Bottleneck"| ProtoDist["Calculate Distance to 8 Benign Prototypes"]
-        ProtoDist --> Forensics["Forensic Confidence & Anomaly Score"]
-    end
-
-    subgraph PresentationPlane ["🖥️ Security Operations Center (SOC Dashboard)"]
-        KnownThreat -->|"WebSocket Telemetry"| Dashboard["Real-Time SOC Dashboard (Port 8000)"]
-        ZeroDay -->|"WebSocket Telemetry"| Dashboard
-        SafeTraffic -->|"WebSocket Telemetry"| Dashboard
-        Forensics -->|"Forensic Pop-up"| Dashboard
-    end
+```
+Physical NIC (en0/eth0)
+        |
+        | [libpcap - Zero Copy]
+        v
+  Rust Wire Engine        <-- Parses Ethernet/IP/TCP headers
+  (engine/src/main.rs)        Aggregates into 5-tuple flows
+        |
+        | [HTTP POST - JSON]
+        v
+  Python AI Backend       <-- Tier-1: LightGBM signature match
+  (backend/main.py)           Tier-2: Autoencoder anomaly score
+        |
+        | [WebSocket]
+        v
+  SOC Dashboard           <-- Real-time alerts, MSE graph, threat table
+  (frontend/index.html)
 ```
 
 ---
 
-## 📊 Benchmark Results & Performance Validation
+## 📊 Benchmark Results
 
-Models were evaluated on a calibrated 25,000-flow telecommunications benchmark matching the **CICIDS2017 international standard**. The Zero-Day threat class (`Infiltration_ZeroDay`) was **100% held out** from training to evaluate true anomaly detection capability.
-
-| Evaluation Metric | Tier-1 (LightGBM) | Tier-2 (Deep Autoencoder) | Combined NIDS 2.0 |
-| :--- | :---: | :---: | :---: |
-| **Known Attacks Precision / Recall** | **1.0000 / 1.0000** | N/A (Unsupervised) | **100.00%** |
-| **Zero-Day Quarantine Rate** | 0.0% (Misclassified) | **100.00% (1,250 / 1,250)** | **100.00% Quarantined** |
-| **Mean Benign Reconstruction MSE** | N/A | **0.0042** (Near Baseline) | Conforms to Manifold |
-| **Mean Zero-Day Reconstruction MSE** | N/A | **16.0252** (3,815x Deviation) | Extreme Departure |
-| **Calibrated Threshold ($\tau$)** | N/A | **0.0687** (98.5th Percentile) | Operating Boundary |
-| **Single-Flow Inference Latency** | **< 0.5 ms** | **~9.5 ms** (Apple Silicon GPU) | **Microsecond Scale** |
+| Metric | Tier-1 (LightGBM) | Tier-2 (Autoencoder) | Combined |
+|:---|:---:|:---:|:---:|
+| Known Attacks Precision/Recall | **1.000 / 1.000** | N/A | **100%** |
+| Zero-Day Quarantine Rate | 0% (missed) | **100% (1250/1250)** | **100%** |
+| Mean Benign MSE | N/A | **0.0042** | Conforms |
+| Mean Zero-Day MSE | N/A | **16.025** (3,815x) | Extreme Departure |
+| Calibrated Threshold (τ) | N/A | **0.0687** | Operating Boundary |
+| Inference Latency | < 0.5 ms | ~9.5 ms (MPS GPU) | Microsecond scale |
 
 ---
 
@@ -81,143 +63,223 @@ Models were evaluated on a calibrated 25,000-flow telecommunications benchmark m
 ```
 .
 ├── backend/
-│   ├── adapter.py              # Feature Engineering: 77 raw -> 91 dimensions + RobustScaler
-│   ├── risk_engine.py          # Dual-Tier inference orchestrator (LightGBM + PyTorch Autoencoder)
-│   ├── main.py                 # Production FastAPI backend + Real-Time WebSocket server
-│   └── test_backend.py         # Automated diagnostic & validation test suite
+│   ├── adapter.py          # Feature Engineering: 77 raw → 91 dimensions
+│   ├── risk_engine.py      # Dual-Tier inference (LightGBM + PyTorch)
+│   ├── main.py             # FastAPI server + WebSocket
+│   └── test_backend.py     # 4-class automated diagnostic test
 ├── engine/
-│   ├── Cargo.toml              # Rust high-speed wire sniffer package definition
-│   └── src/
-│       └── main.rs             # Native Rust packet capture & 5-tuple flow aggregation
+│   ├── Cargo.toml          # Rust deps: pcap 2.5, reqwest, tokio, serde
+│   └── src/main.rs         # libpcap sniffer + 5-tuple flow aggregator
 ├── frontend/
-│   ├── index.html              # Modern dark-mode SOC dashboard structure
-│   ├── styles.css              # Cyber defense glassmorphism design system
-│   └── app.js                  # WebSocket client, Chart.js streams, & interactive attack console
+│   ├── index.html          # Dark-mode SOC dashboard
+│   ├── styles.css          # Glassmorphism cyber design
+│   └── app.js              # WebSocket + Chart.js live streams
 ├── models/
-│   ├── autoencoder.pt          # Trained PyTorch 8-layer symmetric Autoencoder weights
-│   ├── lightgbm_model.pkl      # Trained LightGBM multi-class GBDT booster
-│   ├── scaler.pkl              # RobustScaler fitted on benign traffic distribution
-│   ├── feature_list.json       # Canonical 91-feature schema mapping
-│   ├── metadata.json           # Calibrated tau threshold (0.0687) & 8 latent prototypes
-│   └── evaluation_dashboard.png# Model validation charts (Loss curve, CM, Manifold departure)
+│   ├── autoencoder.pt      # PyTorch Autoencoder weights (80 KB)
+│   ├── lightgbm_model.pkl  # LightGBM booster (776 KB)
+│   ├── scaler.pkl          # RobustScaler (benign distribution)
+│   ├── feature_list.json   # 91-feature canonical schema
+│   ├── metadata.json       # τ=0.0687, 8 latent prototypes
+│   └── evaluation_dashboard.png
 ├── notebooks/
-│   ├── 01_nids_model_training.ipynb # Reproducible 11-cell Google Colab training notebook
-│   ├── make_notebook.py        # Automated notebook builder script
-│   └── train_pipeline.py       # Standalone Python model training pipeline
+│   └── 01_nids_model_training.ipynb  # Google Colab training notebook
 ├── data/
-│   ├── generate_dataset.py     # CICIDS2017 synthetic flow distribution generator
-│   └── cicids2017_benchmark.csv# Generated benchmark dataset (25,000 flows)
+│   └── generate_dataset.py # CICIDS2017 flow generator (25,000 flows)
 ├── scripts/
-│   └── run_traffic_agent.py    # Real-time traffic & attack emulation stream runner
-├── requirements.txt            # Python production dependencies
-└── .gitignore                  # Git exclusion rules
+│   └── run_traffic_agent.py # Legacy Python attack emulator
+├── requirements.txt
+└── .gitignore
 ```
 
 ---
 
-## 🚀 Quickstart & Installation
+## 🚀 Complete Setup Guide
 
-### 1. Clone & Set Up Environment
+### Prerequisites
+
+| Tool | Version | Install |
+|:---|:---|:---|
+| Python | 3.11+ | [python.org](https://python.org) |
+| Rust + Cargo | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| libpcap | System | macOS: pre-installed · Linux: `sudo apt install libpcap-dev` |
+
+---
+
+### Step 1 — Clone & Python Environment
 
 ```bash
 git clone <your-repository-url>
 cd "Xebia Project"
 
-# Create and activate virtual environment
+# Create virtual environment
 python3 -m venv .venv
+
+# Activate (run this in every new terminal session)
 source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Verify AI Models & Inference Pipeline
+---
 
-Run the automated backend diagnostic suite:
+### Step 2 — Install Rust & Build Wire Engine
+
+```bash
+# Install Rust (one-time setup)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+
+# Build Rust engine
+cd engine
+cargo build
+cd ..
+```
+
+---
+
+### Step 3 — Verify AI Models
 
 ```bash
 .venv/bin/python backend/test_backend.py
 ```
 
-Expected diagnostic output:
+Expected output:
 ```
-=================================================================
-🧪 Running NIDS 2.0 Backend Diagnostic Suite...
-=================================================================
-✅ RiskEngine initialized successfully on: mps / cuda
-   Input feature dimensions : 91
+✅ RiskEngine initialized on: mps
    Calibrated threshold (tau): 0.0687
    Cluster prototypes loaded : 8
------------------------------------------------------------------
-🔎 Testing [BENIGN]   : MSE: 0.0007 (tau=0.0687) -> ALLOW ✅
-🔎 Testing [DoS]      : LightGBM Signature Match -> BLOCK_FLOW 🔴
-🔎 Testing [PortScan] : LightGBM Signature Match -> BLOCK_FLOW 🟠
-🔎 Testing [ZeroDay]  : MSE: 16.3570 (tau=0.0687) -> QUARANTINE_HOST 🟣
-=================================================================
-🎉 All 4 traffic categories successfully validated against Dual-Tier AI!
+🔎 [BENIGN]   MSE: 0.0007 → ALLOW ✅
+🔎 [DoS]      LightGBM Signature → BLOCK_FLOW 🔴
+🔎 [PortScan] LightGBM Signature → BLOCK_FLOW 🟠
+🔎 [ZeroDay]  MSE: 16.357  → QUARANTINE_HOST 🟣
+🎉 All 4 traffic categories validated!
 ```
 
-### 3. Launch the Production Backend & SOC Dashboard
+---
 
-Start the FastAPI ASGI server:
+### Step 4 — Run the Full System
+
+Open **2 terminals** and run simultaneously:
+
+#### Terminal 1 — Python AI Backend
+```bash
+cd "Xebia Project"
+source .venv/bin/activate
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Open browser: **`http://127.0.0.1:8000`** → SOC Dashboard  
+API Docs: **`http://127.0.0.1:8000/docs`**
+
+#### Terminal 2 — Rust Wire Engine
 
 ```bash
-.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+cd "Xebia Project/engine"
+source "$HOME/.cargo/env"
 ```
 
-Open your browser to:  
-👉 **`http://127.0.0.1:8000/`**  
-*(Or explore interactive Swagger API docs at `http://127.0.0.1:8000/docs`)*
+| Mode | Command | Description |
+|:---|:---|:---|
+| **Demo / Showcase** (recommended) | `cargo run` | Infinite benchmark loop — sends DoS, PortScan, ZeroDay & Benign flows. Press `Ctrl+C` to stop. |
+| **Real Live Wi-Fi** | `sudo cargo run -- --live` | libpcap captures real packets from default NIC |
+| **Real Wi-Fi (specific interface)** | `sudo cargo run -- --live --dev en0` | Capture from `en0` (macOS Wi-Fi). Use `eth0` on Linux servers. |
+| **PCAP File Replay** | `cargo run -- --pcap /path/file.pcap` | Replay a Wireshark `.pcap` dump |
 
-### 4. Stream Live Network Traffic & Attacks
+---
 
-In a second terminal tab, launch the traffic agent:
+### Find Your Network Interface (macOS)
 
 ```bash
-.venv/bin/python scripts/run_traffic_agent.py
+ifconfig | grep -E "^[a-z]" | cut -d: -f1
 ```
 
-Watch real-time packets stream across the dashboard, observing the live **Reconstruction Error ECG line graph** spike vertically whenever attacks or Zero-Days hit the wire!
+Common interfaces:
+- `en0` — Wi-Fi (use this for live capture)
+- `en1` — Ethernet
+- `utun0` — VPN tunnel (avoid — no real user traffic)
 
 ---
 
-## 🧠 Scientific & Algorithmic Deep Dive
+### Legacy Python Attack Emulator
 
-### 1. Feature Engineering (77 Raw $\to$ 91 Features)
-Network packet raw metadata lacks direct behavioral signals. We engineer 14 interaction metrics:
-* **Asymmetry Ratios:** $\text{Ratio}_{\text{pkt}} = \frac{\text{Fwd Packets}}{\text{Bwd Packets} + 1}$ and $\text{Ratio}_{\text{byte}} = \frac{\text{Fwd Bytes}}{\text{Bwd Bytes} + 1}$ to identify one-sided flood probes.
-* **Protocol Flag Density:** $\text{Density}_{\text{flag}} = \frac{\sum (\text{SYN, FIN, RST, PSH, ACK, URG})}{\text{Total Packets}}$ to detect abnormal TCP handshakes.
-* **Timing Jitter:** $\text{Jitter} = \frac{\text{Std}(\text{Fwd IAT})}{\text{Mean}(\text{Fwd IAT}) + 1}$ to differentiate automated bot rhythms from human browsing.
-* **Log-Scaled Rate Transforms:** $\log(1 + \text{Packets/s})$ to compress massive DoS dynamic ranges.
+If Rust is unavailable, the Python script sends attacks directly to the backend:
 
-### 2. Autoencoder Architecture & Manifold Departure
-* **Topology:** Symmetric 8-layer network: $91 \to 64 \to 32 \to 16 \to 32 \to 64 \to 91$ with `BatchNorm1d` and `LeakyReLU(0.2)`.
-* **Objective:** Trained strictly on `BENIGN` normal traffic using AdamW ($\text{LR}=10^{-3}$, weight decay $=10^{-5}$) minimizing Mean Squared Error (MSE):
-  $$\mathcal{L}_{\text{MSE}}(x, \hat{x}) = \frac{1}{91} \sum_{j=1}^{91} (x_j - \hat{x}_j)^2$$
-* **Threshold Calibration ($\tau$):** Set at the **98.5th percentile** of benign validation errors ($\tau = 0.0687$). Any flow producing $\text{MSE} \ge \tau$ is mathematically proven to deviate from normal operational behavior, triggering **automated host quarantine**.
-
-### 3. Latent Space Prototypes (16-D Centroids)
-Using KMeans clustering on the 16-D bottleneck activations of normal traffic, we extract 8 geometric centroids:
-$$\text{Centroid}_k = \frac{1}{|C_k|} \sum_{z \in C_k} z \quad (k \in \{1, \dots, 8\})$$
-Real-time novelty is quantified by Euclidean distance to the nearest prototype:
-$$d_{\text{novelty}}(z) = \min_{k} \|z - \text{Centroid}_k\|_2$$
-Enabling continuous anomaly confidence scoring.
+```bash
+source .venv/bin/activate
+python scripts/run_traffic_agent.py
+# Press Ctrl+C to stop
+```
 
 ---
 
-## 🛡️ Autonomous Operational Actions
+## 🔬 Manual API Testing (curl)
 
-| Threat Category | Detection Tier | Action Taken | Operational Mechanism |
-| :--- | :--- | :---: | :--- |
-| **BENIGN** | Dual-Tier Clear | `ALLOW` | Passes through without latency penalty |
-| **DoS (Flood)** | Tier-1 LightGBM | `BLOCK_FLOW` | Kernel-level hardware drop (`iptables -A INPUT -s IP -j DROP`) |
-| **PortScan** | Tier-1 LightGBM | `BLOCK_FLOW` | Perimeter port probe dropped; IP added to temporary blocklist |
-| **Zero-Day (Novel)** | Tier-2 Autoencoder | `QUARANTINE_HOST` | Host isolated to quarantine VLAN; active JWTs revoked; memory dumped for forensics |
+```bash
+# Benign flow
+curl -s -X POST http://127.0.0.1:8000/api/v1/simulate/flow \
+  -H "Content-Type: application/json" \
+  -d '{"attack_type": "BENIGN"}' | python3 -m json.tool
+
+# DoS attack
+curl -s -X POST http://127.0.0.1:8000/api/v1/simulate/flow \
+  -H "Content-Type: application/json" \
+  -d '{"attack_type": "DoS"}' | python3 -m json.tool
+
+# Zero-Day threat
+curl -s -X POST http://127.0.0.1:8000/api/v1/simulate/flow \
+  -H "Content-Type: application/json" \
+  -d '{"attack_type": "ZeroDay"}' | python3 -m json.tool
+```
 
 ---
 
-## 📜 Authors & Showcase Context
-* **Project:** Autonomous Network Intrusion Detection System (NIDS 2.0)
-* **Showcase Track:** Advanced AI / Cybersecurity Enterprise Showcase (Xebia)
-* **Standard Compatibility:** CICIDS2017 Benchmark Flow Schema
-# CyberAI
+## 🧠 Scientific Deep Dive
+
+### Feature Engineering (77 → 91 Features)
+14 derived interaction metrics:
+- **Asymmetry Ratio:** `Fwd_Pkts / (Bwd_Pkts + 1)` — detects one-sided flood probes
+- **Flag Density:** `Σ(SYN+FIN+RST+PSH+ACK+URG) / Total_Pkts` — abnormal TCP handshakes
+- **Timing Jitter:** `Std(IAT) / (Mean(IAT) + 1)` — bot vs human rhythm
+- **Log-Rate:** `log(1 + Pkts/s)` — compresses DoS dynamic ranges
+
+### Autoencoder (Tier-2)
+Architecture: `91 → 64 → 32 → 16 → 32 → 64 → 91` with BatchNorm1d + LeakyReLU(0.2)
+
+Loss: MSE = (1/91) * Σ(xⱼ - x̂ⱼ)²
+
+Threshold τ = 0.0687 (98.5th percentile of benign validation errors)
+Any flow with MSE ≥ τ → QUARANTINE_HOST
+
+### Latent Prototypes
+8 KMeans centroids in 16-D bottleneck. Novelty distance:
+d(z) = min_k ‖z − Centroid_k‖₂
+
+---
+
+## 🛡️ Autonomous Threat Response
+
+| Threat | Detection | Action | Mechanism |
+|:---|:---|:---:|:---|
+| BENIGN | Dual-Tier Clear | `ALLOW` | No penalty — passes through |
+| DoS Flood | Tier-1 LightGBM | `BLOCK_FLOW` | `iptables -A INPUT -s <IP> -j DROP` |
+| PortScan | Tier-1 LightGBM | `BLOCK_FLOW` | IP added to perimeter blocklist |
+| Zero-Day | Tier-2 Autoencoder | `QUARANTINE_HOST` | Host isolated to quarantine VLAN |
+
+---
+
+## ⚠️ Known Limitations
+
+### Live Mode False Positives (Domain Shift)
+In `--live` mode, modern TLS 1.3 traffic (YouTube, cloud sync, etc.) may trigger false positives. The model was trained on CICIDS2017 (2017) data — 2024+ traffic has different statistical characteristics. This is the known **distribution shift** problem, solved in production via continuous online retraining.
+
+### sudo Required for NIC Access
+`libpcap` requires root privileges for promiscuous mode — same requirement as Wireshark and tcpdump.
+
+---
+
+## 📜 Project Info
+- **Project:** Autonomous Network Intrusion Detection System (NIDS 2.0)
+- **Showcase:** Advanced AI / Cybersecurity — Xebia
+- **Standard:** CICIDS2017 International Benchmark
+- **Hardware:** Apple Silicon MPS · NVIDIA CUDA · CPU Fallback
