@@ -318,6 +318,10 @@ function updateKPICards(latestFlow) {
   const perfTriage = document.getElementById("perf-mean-triage");
   if (perfTriage) perfTriage.innerHTML = `${avgLat.toFixed(1)}<span class="unit">ms</span>`;
 
+  const maxLat = Math.max(...state.latencies);
+  const perfMax = document.getElementById("perf-max-roundtrip");
+  if (perfMax) perfMax.innerHTML = `${maxLat.toFixed(1)}<span class="unit">ms</span>`;
+
   if (latestFlow) {
     const mseVal = latestFlow.reconstruction_error;
     document.getElementById("kpi-latest-mse").textContent = mseVal.toFixed(4);
