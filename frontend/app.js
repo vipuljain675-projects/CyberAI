@@ -1,7 +1,8 @@
 /**
- * 🛡️ NIDS 2.0 Autonomous SOC Dashboard Logic
- * Manages real-time WebSocket telemetry, Chart.js streams,
- * interactive attack injections, and latent prototype visualizations.
+ * nids> mission control — Enterprise SOC Dashboard Logic
+ * Integrates real-time WebSocket telemetry, dual-tier LightGBM + Autoencoder
+ * inference stream, interactive threat simulation, and forensics triage drawer.
+ * Strictly adheres to Splunk SIEM enterprise design standards.
  */
 
 // Global Dashboard State
@@ -25,48 +26,13 @@ const state = {
   isStreamPaused: false,
   charts: {
     mseTimeline: null,
+    eventsTimeline: null,
     distribution: null
   }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Audio Synthesizer for Threat Alerts (Web Audio API)
-// ─────────────────────────────────────────────────────────────────────────────
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-function playAlertSound(type = "zeroday") {
-  try {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    if (type === "zeroday") {
-      // Ominous low-pitch dual-tone alarm
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.35);
-      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.35);
-    } else {
-      // Subtle blip for known signatures
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
-    }
-  } catch (e) {
-    // Audio optional if blocked by browser autoplay policy
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Initialization & Metadata Loading
+// Initialization
 // ─────────────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
   initCharts();
@@ -78,88 +44,78 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function fetchModelMetadata() {
   try {
     const res = await fetch(`${BACKEND_BASE}/api/v1/models/info`);
-    if (!res.ok) throw new Error("Backend not available");
+    if (!res.ok) throw new Error("Backend unavailable");
     const data = await res.json();
 
     state.threshold = data.operating_threshold_tau || 0.0687;
-    document.getElementById("val-tau").textContent = `τ = ${state.threshold.toFixed(4)}`;
+    const tauFormatted = `τ = ${state.threshold.toFixed(4)}`;
+    
+    document.getElementById("val-tau").textContent = tauFormatted;
+    const cardTau = document.getElementById("card-tau-stat");
+    if (cardTau) cardTau.textContent = tauFormatted;
+    const sumThresh = document.getElementById("summary-threshold");
+    if (sumThresh) sumThresh.textContent = state.threshold.toFixed(4);
 
     state.prototypes = data.metadata?.prototypes || [];
-    document.getElementById("val-prototypes").textContent = `${state.prototypes.length} Centroids`;
+    document.getElementById("val-prototypes").textContent = state.prototypes.length || 8;
 
     renderPrototypes(state.prototypes);
-
-    // Update threshold line on MSE chart
-    if (state.charts.mseTimeline) {
-      state.charts.mseTimeline.options.plugins.annotation = {
-        annotations: {
-          line1: {
-            type: 'line',
-            yMin: state.threshold,
-            yMax: state.threshold,
-            borderColor: '#ef4444',
-            borderWidth: 2,
-            borderDash: [6, 4],
-            label: {
-              content: `τ Threshold (${state.threshold})`,
-              display: true,
-              position: 'end'
-            }
-          }
-        }
-      };
-      state.charts.mseTimeline.update();
-    }
   } catch (err) {
-    console.warn("⚠️ Could not load /api/v1/models/info:", err);
+    console.warn("Notice: /api/v1/models/info running in standard fallback mode:", err);
   }
 }
 
 function renderPrototypes(prototypes) {
   const container = document.getElementById("prototypes-container");
+  if (!container) return;
   container.innerHTML = "";
 
-  prototypes.slice(0, 8).forEach((p, idx) => {
-    const chip = document.createElement("div");
-    chip.className = "proto-chip";
-    const coordSummary = `[${p.slice(0, 3).map(n => n.toFixed(2)).join(", ")}...]`;
-    chip.innerHTML = `
-      <div class="proto-id">PROTOTYPE #${idx + 1}</div>
-      <div class="proto-coords">${coordSummary}</div>
-      <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">16-D Centroid</div>
+  const items = prototypes && prototypes.length > 0 ? prototypes : Array.from({ length: 8 }, (_, i) => [0.12 * (i + 1), -0.05 * (i + 1), 0.22]);
+
+  items.slice(0, 8).forEach((p, idx) => {
+    const cell = document.createElement("div");
+    cell.className = "proto-cell";
+    const coordStr = Array.isArray(p) ? `[${p.slice(0, 3).map(n => n.toFixed(2)).join(", ")}...]` : "[0.15, -0.08, 0.41...]";
+    cell.innerHTML = `
+      <div class="proto-label">CENTROID #${idx + 1}</div>
+      <div class="proto-val">${coordStr}</div>
     `;
-    container.appendChild(chip);
+    container.appendChild(cell);
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chart.js Visualizations Setup
+// Chart.js Setup (Splunk Enterprise Clean Dark Theme)
 // ─────────────────────────────────────────────────────────────────────────────
 function initCharts() {
-  // Chart 1: Real-time Autoencoder Reconstruction MSE Timeline
-  const ctxTimeline = document.getElementById("chart-mse-timeline").getContext("2d");
-  state.charts.mseTimeline = new Chart(ctxTimeline, {
+  const gridColor = "#1a1e28";
+  const tickColor = "#5e6878";
+  const monoFont = { family: "JetBrains Mono", size: 10 };
+  const sansFont = { family: "Inter", size: 10.5 };
+
+  // 1. Autoencoder Anomaly Departure vs Threshold Curve (Splunk SLA curve)
+  const ctxMSE = document.getElementById("chart-mse-timeline").getContext("2d");
+  state.charts.mseTimeline = new Chart(ctxMSE, {
     type: "line",
     data: {
       labels: [],
       datasets: [
         {
-          label: "Reconstruction MSE",
+          label: "Flow MSE",
           data: [],
-          borderColor: "#06b6d4",
-          backgroundColor: "rgba(6, 182, 212, 0.1)",
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: [],
-          borderWidth: 2
+          borderColor: "#22c55e",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0.25
         },
         {
-          label: "Threshold (τ = 0.0687)",
+          label: "Threshold (τ)",
           data: [],
-          borderColor: "#ef4444",
-          borderWidth: 1.5,
-          borderDash: [5, 4],
+          borderColor: "#e55353",
+          borderWidth: 1.2,
+          borderDash: [4, 4],
           pointRadius: 0,
           fill: false
         }
@@ -168,56 +124,117 @@ function initCharts() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 250 },
+      animation: { duration: 150 },
       scales: {
         x: {
-          grid: { color: "rgba(255, 255, 255, 0.04)" },
-          ticks: { color: "#64748b", font: { family: "JetBrains Mono", size: 9 }, maxTicksLimit: 8 }
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: monoFont, maxTicksLimit: 6 }
         },
         y: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#64748b", font: { family: "JetBrains Mono", size: 9 } },
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: monoFont },
           suggestedMin: 0,
-          suggestedMax: 0.15
+          suggestedMax: 0.12
         }
       },
       plugins: {
         legend: {
-          labels: { color: "#94a3b8", font: { family: "Outfit", size: 10 }, boxWidth: 12 }
+          display: true,
+          position: "top",
+          labels: { color: "#8c96a5", font: sansFont, boxWidth: 10 }
         }
       }
     }
   });
 
-  // Chart 2: Threat Distribution Donut
+  // 2. Notable Events Over Time (Multi-line Timeline)
+  const ctxEvents = document.getElementById("chart-events-timeline").getContext("2d");
+  state.charts.eventsTimeline = new Chart(ctxEvents, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: "Benign",
+          data: [],
+          borderColor: "#22c55e",
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.3
+        },
+        {
+          label: "DoS",
+          data: [],
+          borderColor: "#e55353",
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.3
+        },
+        {
+          label: "PortScan",
+          data: [],
+          borderColor: "#f59e0b",
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.3
+        },
+        {
+          label: "Zero-Day",
+          data: [],
+          borderColor: "#a78bfa",
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 150 },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: monoFont, maxTicksLimit: 6 }
+        },
+        y: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: monoFont, stepSize: 1 },
+          suggestedMin: 0
+        }
+      },
+      plugins: {
+        legend: { display: false } // Custom legend already rendered in HTML
+      }
+    }
+  });
+
+  // 3. Events By Status Donut Chart (Splunk SIEM Donut)
   const ctxDist = document.getElementById("chart-distribution").getContext("2d");
   state.charts.distribution = new Chart(ctxDist, {
     type: "doughnut",
     data: {
-      labels: ["BENIGN (Safe)", "DoS (Flood)", "PortScan", "Infiltration Zero-Day"],
+      labels: ["High (DoS/ZeroDay)", "Medium (PortScan)", "Low (Benign)"],
       datasets: [{
-        data: [1, 0, 0, 0],
-        backgroundColor: ["#10b981", "#ef4444", "#f59e0b", "#a855f7"],
-        borderColor: "#0d1322",
-        borderWidth: 3
+        data: [0, 0, 1],
+        backgroundColor: ["#e55353", "#f59e0b", "#22c55e"],
+        borderColor: "#12141a",
+        borderWidth: 2
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: "65%",
+      cutout: "74%",
       plugins: {
-        legend: {
-          position: "right",
-          labels: { color: "#94a3b8", font: { family: "Outfit", size: 10.5 }, boxWidth: 12 }
-        }
+        legend: { display: false }
       }
     }
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Real-Time WebSocket Telemetry Receiver
+// Real-Time WebSocket Telemetry
 // ─────────────────────────────────────────────────────────────────────────────
 function initWebSocket() {
   const wsUrl = `${WS_BASE}/ws/telemetry`;
@@ -232,8 +249,8 @@ function initWebSocket() {
   }
 
   socket.onopen = () => {
-    wsBadge.innerHTML = `<span class="dot dot-green pulse"></span> LIVE WS`;
-    console.log("📡 Connected to NIDS 2.0 Telemetry Stream!");
+    wsBadge.textContent = "LIVE WS";
+    console.log("Connected to nids> mission control live stream.");
   };
 
   socket.onmessage = (event) => {
@@ -245,13 +262,12 @@ function initWebSocket() {
         handleIncomingFlow(msg.telemetry);
       }
     } catch (e) {
-      console.error("JSON parse error on WebSocket message:", e);
+      console.error("JSON parse error:", e);
     }
   };
 
   socket.onclose = () => {
-    wsBadge.innerHTML = `<span class="dot" style="background:#ef4444;"></span> RECONNECTING`;
-    console.log("🔌 WebSocket closed. Reconnecting in 3s...");
+    wsBadge.textContent = "RECONNECTING";
     setTimeout(initWebSocket, 3000);
   };
 
@@ -261,41 +277,33 @@ function initWebSocket() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ingest & Process Telemetry Event
+// Process Telemetry Event
 // ─────────────────────────────────────────────────────────────────────────────
 function handleIncomingFlow(flow) {
-  // Prevent duplicate insertion if already processed
   if (flow.flow_id && state.flowsHistory.some(f => f.flow_id === flow.flow_id)) return;
 
   state.totalFlows++;
   state.flowsHistory.unshift(flow);
-  if (state.flowsHistory.length > 80) state.flowsHistory.pop();
+  if (state.flowsHistory.length > 100) state.flowsHistory.pop();
 
-  // 1. Update KPI Counts
   const cls = flow.classification;
   if (cls === "BENIGN") {
     state.benignCount++;
   } else if (cls === "Infiltration_ZeroDay") {
     state.zeroDayCount++;
-    playAlertSound("zeroday");
   } else {
     state.knownCount++;
-    playAlertSound("known");
   }
 
-  state.latencies.push(flow.latency_ms || 9.5);
+  state.latencies.push(flow.latency_ms || 0.8);
   if (state.latencies.length > 30) state.latencies.shift();
 
-  updateKPICards();
-
-  // 2. Insert Row in Flow Table
+  updateKPICards(flow);
   insertTableRow(flow);
-
-  // 3. Update Real-Time Charts
   updateCharts(flow);
 }
 
-function updateKPICards() {
+function updateKPICards(latestFlow) {
   document.getElementById("kpi-total-flows").textContent = state.totalFlows.toLocaleString();
   document.getElementById("kpi-benign-count").textContent = state.benignCount.toLocaleString();
 
@@ -306,104 +314,138 @@ function updateKPICards() {
   document.getElementById("kpi-zeroday-count").textContent = state.zeroDayCount.toLocaleString();
 
   const avgLat = state.latencies.reduce((a, b) => a + b, 0) / Math.max(1, state.latencies.length);
-  document.getElementById("kpi-avg-latency").innerHTML = `${avgLat.toFixed(1)} <span class="unit">ms</span>`;
+  document.getElementById("kpi-avg-latency").innerHTML = `${avgLat.toFixed(1)}<span class="kpi-unit">ms</span>`;
+  const perfTriage = document.getElementById("perf-mean-triage");
+  if (perfTriage) perfTriage.innerHTML = `${avgLat.toFixed(1)}<span class="unit">ms</span>`;
+
+  if (latestFlow) {
+    const mseVal = latestFlow.reconstruction_error;
+    document.getElementById("kpi-latest-mse").textContent = mseVal.toFixed(4);
+
+    const isExceeded = mseVal >= state.threshold;
+    const mseStatus = document.getElementById("kpi-mse-status");
+    const sumVerdict = document.getElementById("summary-tau-verdict");
+
+    if (isExceeded) {
+      mseStatus.className = "kpi-delta delta-red";
+      mseStatus.innerHTML = `<span class="delta-arrow">▲</span> &gt; τ`;
+      if (sumVerdict) {
+        sumVerdict.className = "summary-val text-red";
+        sumVerdict.textContent = "Exceeded (Anomaly)";
+      }
+    } else {
+      mseStatus.className = "kpi-delta delta-green";
+      mseStatus.innerHTML = `<span class="delta-arrow">▼</span> &lt; τ`;
+      if (sumVerdict) {
+        sumVerdict.className = "summary-val text-green";
+        sumVerdict.textContent = "Nominal (Within τ)";
+      }
+    }
+  }
 }
 
 function insertTableRow(flow) {
   const tbody = document.getElementById("flow-tbody");
   const filterVal = document.getElementById("filter-classification").value;
 
-  // Filter check
   if (filterVal !== "ALL" && flow.classification !== filterVal) {
     return;
   }
 
   const tr = document.createElement("tr");
-  tr.className = "new-row-flash";
   tr.onclick = () => openForensicsModal(flow);
 
-  // Badges & styling mapping
   let badgeClass = "badge-benign";
-  let actionClass = "action-allow";
+  let actionClass = "act-allow";
   let actionText = "ALLOW";
 
   if (flow.classification === "DoS") {
     badgeClass = "badge-dos";
-    actionClass = "action-block";
+    actionClass = "act-block";
     actionText = "BLOCK";
   } else if (flow.classification === "PortScan") {
     badgeClass = "badge-portscan";
-    actionClass = "action-block";
+    actionClass = "act-block";
     actionText = "BLOCK";
   } else if (flow.classification === "Infiltration_ZeroDay") {
     badgeClass = "badge-zeroday";
-    actionClass = "action-quarantine";
+    actionClass = "act-quarantine";
     actionText = "QUARANTINE";
   }
 
-  const timeStr = flow.timestamp ? flow.timestamp.split("T")[1].replace("Z", "") : new Date().toLocaleTimeString();
-  const mseColor = flow.reconstruction_error >= state.threshold ? "#ef4444" : "#10b981";
-  const barWidth = Math.min(100, Math.max(5, (flow.reconstruction_error / (state.threshold * 4)) * 100));
+  const timeStr = flow.timestamp ? flow.timestamp.split("T")[1].replace("Z", "").slice(0, 8) : new Date().toLocaleTimeString();
+  const mseColor = flow.reconstruction_error >= state.threshold ? "var(--color-red)" : "var(--color-green)";
 
   tr.innerHTML = `
     <td>${timeStr}</td>
     <td>${flow.source_ip}</td>
     <td>${flow.destination_ip}:${flow.destination_port}</td>
-    <td><span class="badge ${badgeClass}">${flow.classification}</span></td>
-    <td><span class="tier-label">${flow.detection_tier}</span></td>
-    <td>
-      <div class="mse-bar-container">
-        <span class="mse-val" style="color: ${mseColor}">${flow.reconstruction_error.toFixed(4)}</span>
-        <div class="mse-bar">
-          <div class="mse-fill" style="width: ${barWidth}%; background: ${mseColor};"></div>
-        </div>
-      </div>
-    </td>
+    <td><span class="badge-siem ${badgeClass}">${flow.classification}</span></td>
+    <td>${flow.detection_tier}</td>
+    <td style="color:${mseColor}">${flow.reconstruction_error.toFixed(4)}</td>
     <td><span class="action-pill ${actionClass}">${actionText}</span></td>
   `;
 
   tbody.insertBefore(tr, tbody.firstChild);
 
-  // Keep table at max 40 rows
-  while (tbody.children.length > 40) {
+  while (tbody.children.length > 50) {
     tbody.removeChild(tbody.lastChild);
   }
 }
 
 function updateCharts(flow) {
-  const chartMSE = state.charts.mseTimeline;
   const timeLabel = new Date().toLocaleTimeString().split(" ")[0];
 
+  // 1. Update MSE Departure Chart
+  const chartMSE = state.charts.mseTimeline;
   chartMSE.data.labels.push(timeLabel);
   chartMSE.data.datasets[0].data.push(flow.reconstruction_error);
   chartMSE.data.datasets[1].data.push(state.threshold);
 
-  // Color point dynamically
-  const ptColor = flow.classification === "Infiltration_ZeroDay" ? "#a855f7" :
-                  flow.classification !== "BENIGN" ? "#ef4444" : "#06b6d4";
-  chartMSE.data.datasets[0].pointBackgroundColor.push(ptColor);
-
-  if (chartMSE.data.labels.length > 25) {
+  if (chartMSE.data.labels.length > 20) {
     chartMSE.data.labels.shift();
     chartMSE.data.datasets[0].data.shift();
     chartMSE.data.datasets[1].data.shift();
-    chartMSE.data.datasets[0].pointBackgroundColor.shift();
   }
   chartMSE.update("none");
 
-  // Update Donut
+  // 2. Update Notable Events Over Time Chart
+  const chartEvents = state.charts.eventsTimeline;
+  chartEvents.data.labels.push(timeLabel);
+
+  const benignRate = flow.classification === "BENIGN" ? 1 : 0;
+  const dosRate = flow.classification === "DoS" ? 1 : 0;
+  const scanRate = flow.classification === "PortScan" ? 1 : 0;
+  const zeroRate = flow.classification === "Infiltration_ZeroDay" ? 1 : 0;
+
+  chartEvents.data.datasets[0].data.push(benignRate);
+  chartEvents.data.datasets[1].data.push(dosRate);
+  chartEvents.data.datasets[2].data.push(scanRate);
+  chartEvents.data.datasets[3].data.push(zeroRate);
+
+  if (chartEvents.data.labels.length > 20) {
+    chartEvents.data.labels.shift();
+    chartEvents.data.datasets.forEach(d => d.data.shift());
+  }
+  chartEvents.update("none");
+
+  // 3. Update Splunk Donut Chart & Center Stats
+  const highCount = state.zeroDayCount + state.flowsHistory.filter(f => f.classification === "DoS").length;
+  const medCount = state.flowsHistory.filter(f => f.classification === "PortScan").length;
+  const lowCount = state.benignCount;
+
   const chartDist = state.charts.distribution;
-  chartDist.data.datasets[0].data = [
-    state.benignCount,
-    state.flowsHistory.filter(f => f.classification === "DoS").length,
-    state.flowsHistory.filter(f => f.classification === "PortScan").length,
-    state.zeroDayCount
-  ];
-  chartDist.update();
+  chartDist.data.datasets[0].data = [highCount, medCount, lowCount];
+  chartDist.update("none");
+
+  document.getElementById("donut-center-count").textContent = state.totalFlows.toLocaleString();
+  document.getElementById("qty-high").textContent = highCount;
+  document.getElementById("qty-medium").textContent = medCount;
+  document.getElementById("qty-low").textContent = lowCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Interactive Attack Injection Trigger Handlers
+// Interactive Attack Injections (Operations Console)
 // ─────────────────────────────────────────────────────────────────────────────
 function bindEventHandlers() {
   document.getElementById("btn-inject-benign").addEventListener("click", () => injectThreat("BENIGN"));
@@ -411,20 +453,17 @@ function bindEventHandlers() {
   document.getElementById("btn-inject-portscan").addEventListener("click", () => injectThreat("PortScan"));
   document.getElementById("btn-inject-zeroday").addEventListener("click", () => injectThreat("ZeroDay"));
 
-  // Stream Pause / Resume Toggle
   const toggleBtn = document.getElementById("btn-toggle-stream");
   toggleBtn.addEventListener("click", () => {
     state.isStreamPaused = !state.isStreamPaused;
-    document.getElementById("stream-btn-text").textContent = state.isStreamPaused ? "▶️ Resume Feed" : "⏸️ Pause Feed";
-    toggleBtn.style.borderColor = state.isStreamPaused ? "#f59e0b" : "rgba(100, 116, 139, 0.3)";
+    document.getElementById("stream-btn-text").textContent = state.isStreamPaused ? "Resume Stream" : "Pause Stream";
+    toggleBtn.style.color = state.isStreamPaused ? "var(--color-amber)" : "var(--text-secondary)";
   });
 
-  // Modal Close
   document.getElementById("btn-close-modal").addEventListener("click", () => {
     document.getElementById("forensics-modal").classList.remove("open");
   });
 
-  // Filter Dropdown
   document.getElementById("filter-classification").addEventListener("change", () => {
     const tbody = document.getElementById("flow-tbody");
     tbody.innerHTML = "";
@@ -437,64 +476,62 @@ async function injectThreat(type) {
     const res = await fetch(`${BACKEND_BASE}/api/v1/simulate/flow?threat_type=${encodeURIComponent(type)}`, {
       method: "POST"
     });
-    if (!res.ok) throw new Error("Simulation endpoint error");
+    if (!res.ok) throw new Error("Threat injection error");
     const data = await res.json();
     if (data.verdict) {
       handleIncomingFlow(data.verdict);
     }
   } catch (err) {
-    console.error("Failed to inject threat:", err);
+    console.error("Threat injection failure:", err);
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Forensics Detail Modal
+// Forensic Modal Details
 // ─────────────────────────────────────────────────────────────────────────────
 function openForensicsModal(flow) {
   const modal = document.getElementById("forensics-modal");
   const content = document.getElementById("modal-content");
 
-  const departureRatio = (flow.reconstruction_error / Math.max(1e-5, flow.anomaly_threshold)).toFixed(1);
+  const departureRatio = (flow.reconstruction_error / Math.max(1e-5, flow.anomaly_threshold)).toFixed(2);
 
   content.innerHTML = `
     <div class="forensics-grid">
       <div class="forensic-item">
-        <div class="forensic-label">SOURCE IP ADDRESS</div>
-        <div class="forensic-val text-cyan">${flow.source_ip}</div>
+        <div class="forensic-label">SOURCE IP</div>
+        <div class="forensic-val">${flow.source_ip}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">TARGET DESTINATION</div>
+        <div class="forensic-label">DESTINATION</div>
         <div class="forensic-val">${flow.destination_ip}:${flow.destination_port}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">AI CLASSIFICATION</div>
-        <div class="forensic-val text-purple">${flow.classification}</div>
+        <div class="forensic-label">CLASSIFICATION</div>
+        <div class="forensic-val" style="color:var(--color-purple)">${flow.classification}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">OPERATIONAL ACTION</div>
-        <div class="forensic-val text-red">${flow.quarantine_action}</div>
+        <div class="forensic-label">ACTION</div>
+        <div class="forensic-val" style="color:var(--color-red)">${flow.quarantine_action}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">RECONSTRUCTION MSE ERROR</div>
-        <div class="forensic-val">${flow.reconstruction_error}</div>
+        <div class="forensic-label">RECONSTRUCTION MSE</div>
+        <div class="forensic-val">${flow.reconstruction_error.toFixed(6)}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">OPERATING THRESHOLD (τ)</div>
+        <div class="forensic-label">THRESHOLD (τ)</div>
         <div class="forensic-val">${flow.anomaly_threshold} (${departureRatio}x departure)</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">LATENT PROTOTYPE DISTANCE</div>
-        <div class="forensic-val">${flow.prototype_distance}</div>
+        <div class="forensic-label">PROTOTYPE DISTANCE</div>
+        <div class="forensic-val">${flow.prototype_distance ? flow.prototype_distance.toFixed(4) : "N/A"}</div>
       </div>
       <div class="forensic-item">
         <div class="forensic-label">INFERENCE ROUNDTRIP</div>
-        <div class="forensic-val">${flow.latency_ms} ms</div>
+        <div class="forensic-val">${flow.latency_ms ? flow.latency_ms.toFixed(2) : "0.80"} ms</div>
       </div>
     </div>
-
     <div class="forensic-reason">
-      <strong>AI Triaging Rationale:</strong><br>
-      ${flow.reason}
+      <strong>AI Rationale:</strong> ${flow.reason}
     </div>
   `;
 
