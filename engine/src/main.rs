@@ -5,7 +5,6 @@
 //! 3. Aggregates packets into 5-tuple bidirectional network flows (CICIDS2017 schema).
 //! 4. Streams flow records asynchronously to the Python FastAPI AI Risk Engine.
 
-use chrono::Utc;
 use pcap::{Capture, Device};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -296,11 +295,15 @@ async fn run_live_pcap_sniffer(device_name: Option<String>) -> Result<(), Box<dy
     let device = if let Some(dev) = device_name {
         Device::from(dev.as_str())
     } else {
-        match Device::lookup()? {
-            Some(dev) => dev,
-            None => {
-                println!("⚠️ No default network device found by libpcap. Using en0...");
-                Device::from("en0")
+        #[cfg(target_os = "macos")]
+        {
+            Device::from("en0")
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            match Device::lookup()? {
+                Some(dev) => dev,
+                None => Device::from("eth0"),
             }
         }
     };
