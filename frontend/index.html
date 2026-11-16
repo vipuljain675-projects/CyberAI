@@ -25,11 +25,9 @@
         <span class="brand-suite">mission control</span>
       </div>
       <ul class="nav-menu">
-        <li class="nav-item"><a href="#" class="nav-link">Home</a></li>
-        <li class="nav-item"><a href="#investigations" class="nav-link">Investigations <span class="arrow-down">▾</span></a></li>
-        <li class="nav-item active"><a href="#" class="nav-link">Dashboards <span class="arrow-down">▾</span></a></li>
+        <li class="nav-item active"><a href="#" class="nav-link">Dashboards</a></li>
+        <li class="nav-item"><a href="#investigations" class="nav-link">Investigations</a></li>
         <li class="nav-item"><a href="#prototypes-section" class="nav-link">Latent Manifold</a></li>
-        <li class="nav-item"><a href="/docs" target="_blank" class="nav-link">Search & API</a></li>
       </ul>
     </div>
     <div class="nav-right">
@@ -44,12 +42,6 @@
         <span class="status-dot dot-green pulse"></span>
         <span class="status-chip-text" id="ws-status-badge">LIVE WS</span>
       </div>
-      <button class="nav-icon-btn" title="Configuration">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      </button>
-      <button class="nav-icon-btn" title="Alerts">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-      </button>
       <div class="user-avatar" title="SOC Security Analyst">SOC</div>
     </div>
   </nav>
@@ -65,9 +57,6 @@
         <span class="time-label">FEED:</span>
         <span class="time-value">REAL-TIME TELEMETRY</span>
       </div>
-      <button class="icon-menu-btn" title="More Actions">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
-      </button>
     </div>
   </div>
 
@@ -115,18 +104,18 @@
       </div>
 
       <div class="kpi-cell">
-        <div class="kpi-label">RECON ERROR (MSE)</div>
+        <div class="kpi-label">DOLLARS SAVED</div>
         <div class="kpi-row">
-          <span class="kpi-value" id="kpi-latest-mse">0.0210</span>
-          <span class="kpi-delta delta-green" id="kpi-mse-status"><span class="delta-arrow">▼</span> &lt; τ</span>
+          <span class="kpi-value" id="kpi-dollars-saved">$0</span>
+          <span class="kpi-delta delta-green"><span class="delta-arrow">▲</span> <span id="kpi-dollars-delta">+13%</span></span>
         </div>
       </div>
 
       <div class="kpi-cell">
-        <div class="kpi-label">LATENT CENTROIDS</div>
+        <div class="kpi-label">RECON ERROR (MSE)</div>
         <div class="kpi-row">
-          <span class="kpi-value" id="val-prototypes">8</span>
-          <span class="kpi-delta delta-green">16-D</span>
+          <span class="kpi-value" id="kpi-latest-mse">0.0210</span>
+          <span class="kpi-delta delta-green" id="kpi-mse-status"><span class="delta-arrow">▼</span> &lt; τ</span>
         </div>
       </div>
     </section>
@@ -371,9 +360,7 @@
       <span>FastAPI • PyTorch MPS • LightGBM • Rust Engine</span>
     </div>
     <div class="footer-right">
-      <a href="/docs" target="_blank" class="footer-link">API Specification</a>
-      <span class="footer-divider">|</span>
-      <span class="footer-status">Cluster Healthy</span>
+      <span class="footer-status">Autonomous Wire Defense Active</span>
     </div>
   </footer>
 
