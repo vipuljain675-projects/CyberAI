@@ -1107,3 +1107,99 @@ html, body {
     grid-column: span 12;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SHAP Feature Attribution Panel (Forensics Modal)
+   ───────────────────────────────────────────────────────────────────────────── */
+.shap-section {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 14px;
+}
+
+.shap-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.shap-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.shap-subtitle {
+  font-size: 10px;
+  color: #445060;
+  font-family: var(--font-mono);
+}
+
+.shap-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+}
+
+.shap-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.shap-row {
+  display: grid;
+  grid-template-columns: 220px 1fr 70px;
+  align-items: center;
+  gap: 8px;
+}
+
+.shap-feat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shap-bar-wrap {
+  height: 10px;
+  background: #12141a;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.shap-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.shap-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+}
+
+.shap-zeroday-note {
+  font-size: 11px;
+  color: #445060;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: #0d1017;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.shap-zeroday-note strong {
+  color: var(--color-red);
+}

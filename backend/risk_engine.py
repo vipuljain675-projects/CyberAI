@@ -21,6 +21,11 @@ import pickle
 from pathlib import Path
 from typing import Dict, Any, List, Union
 import numpy as np
+try:
+    import shap as _shap
+    _SHAP_AVAILABLE = True
+except ImportError:
+    _SHAP_AVAILABLE = False
 import torch
 import torch.nn as nn
 
@@ -98,6 +103,18 @@ class RiskEngine:
         with open(lgb_path, "rb") as f:
             self.lgbm_model = pickle.load(f)
 
+        # 2b. SHAP TreeExplainer for LightGBM (zero retraining required)
+        self.shap_explainer = None
+        if _SHAP_AVAILABLE:
+            try:
+                self.shap_explainer = _shap.TreeExplainer(
+                    self.lgbm_model,
+                    feature_perturbation="tree_path_dependent"
+                )
+                print("  SHAP TreeExplainer initialized for LightGBM Tier-1 interpretability.")
+            except Exception as _e:
+                print(f"  SHAP init warning (non-fatal): {_e}")
+
         # 3. Load Deep Autoencoder Weights
         self.autoencoder = DeepAutoencoder(input_dim=self.input_dim, bottleneck_dim=16).to(self.device)
         ae_weights_path = self.models_dir / "autoencoder.pt"
@@ -135,7 +152,11 @@ class RiskEngine:
         with torch.no_grad():
             x_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)
             recon, latent = self.autoencoder(x_tensor)
-            recon_errors = torch.mean((x_tensor - recon) ** 2, dim=1).cpu().numpy()
+            recon_diff_tensor = x_tensor - recon
+            recon_sq_tensor = recon_diff_tensor ** 2
+            recon_errors = torch.mean(recon_sq_tensor, dim=1).cpu().numpy()
+            recon_sq_np = recon_sq_tensor.cpu().numpy()
+            recon_diff_np = recon_diff_tensor.cpu().numpy()
             latent_np = latent.cpu().numpy()
 
         # Step 4: Prototype Distance (Latent Space Novelty)
@@ -149,6 +170,24 @@ class RiskEngine:
 
         total_latency_ms = (time.perf_counter() - start_time) * 1000.0
         per_flow_latency_ms = round(total_latency_ms / max(1, n_samples), 3)
+
+        # Step 4b: SHAP Attributions for LightGBM (Tier-1 only; fast tree path)
+        # SHAP 0.46+ returns ndarray of shape (n_samples, n_features, n_classes) for multiclass
+        shap_matrix = None
+        if self.shap_explainer is not None:
+            try:
+                raw_sv = self.shap_explainer.shap_values(X_scaled)
+                # raw_sv: ndarray (n_samples, n_features, n_classes) OR list of (n_samples, n_features)
+                if isinstance(raw_sv, np.ndarray) and raw_sv.ndim == 3:
+                    # New SHAP API: (n_samples, n_features, n_classes)
+                    shap_matrix = raw_sv  # shape: (n_samples, n_features, n_classes)
+                elif isinstance(raw_sv, list):
+                    # Legacy SHAP API: list of (n_samples, n_features) per class
+                    shap_matrix = np.stack(raw_sv, axis=2)  # → (n_samples, n_features, n_classes)
+                else:
+                    shap_matrix = None
+            except Exception:
+                shap_matrix = None
 
         # Step 5: Triaging & Decision Matrix
         results = []
@@ -201,6 +240,61 @@ class RiskEngine:
                 anomaly_score = round(max(0.0, (recon_err / max(1e-5, self.threshold)) * 20.0), 1)
                 reason = f"Traffic pattern conforms to normal benign manifold (Reconstruction Error: {recon_err:.4f} < {self.threshold:.4f})."
 
+            # ── FEATURE ATTRIBUTIONS (SHAP & AUTOENCODER RECONSTRUCTION) ────
+            shap_attributions = []
+            feature_names = self.adapter.expected_features
+
+            if is_zero_day:
+                # Tier-2 Unsupervised Anomaly (Deep Autoencoder Manifold Departure):
+                # Explains which specific features departed heavily from the normal benign manifold
+                feat_errors = recon_sq_np[i]       # (n_features,)
+                feat_diffs = recon_diff_np[i]      # (n_features,)
+                top_idx = np.argsort(feat_errors)[::-1][:10]
+                shap_attributions = [
+                    {
+                        "feature": feature_names[j],
+                        "shap_value": round(float(feat_diffs[j]), 5),
+                        "abs_value": round(float(feat_errors[j]), 5),
+                        "type": "departure"
+                    }
+                    for j in top_idx
+                ]
+            elif shap_matrix is not None:
+                # Tier-1 Supervised (LightGBM TreeSHAP)
+                try:
+                    if shap_matrix.ndim == 3:
+                        target_class = pred_class_idx if pred_class_name != "BENIGN" else 0
+                        sv_row = shap_matrix[i, :, target_class]
+                    else:
+                        sv_row = shap_matrix[i, :]
+
+                    top_idx = np.argsort(np.abs(sv_row))[::-1][:10]
+                    shap_attributions = [
+                        {
+                            "feature": feature_names[j],
+                            "shap_value": round(float(sv_row[j]), 5),
+                            "abs_value": round(float(abs(sv_row[j])), 5),
+                            "type": "shap"
+                        }
+                        for j in top_idx
+                    ]
+                except Exception:
+                    shap_attributions = []
+            else:
+                # Fallback to autoencoder reconstruction errors
+                feat_errors = recon_sq_np[i]
+                feat_diffs = recon_diff_np[i]
+                top_idx = np.argsort(feat_errors)[::-1][:10]
+                shap_attributions = [
+                    {
+                        "feature": feature_names[j],
+                        "shap_value": round(float(feat_diffs[j]), 5),
+                        "abs_value": round(float(feat_errors[j]), 5),
+                        "type": "departure"
+                    }
+                    for j in top_idx
+                ]
+
             results.append({
                 "flow_id": f"flow_{int(time.time()*1000)}_{i}",
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -219,7 +313,8 @@ class RiskEngine:
                 "is_anomaly": is_anomaly,
                 "is_zero_day": is_zero_day,
                 "reason": reason,
-                "latency_ms": per_flow_latency_ms
+                "latency_ms": per_flow_latency_ms,
+                "shap_attributions": shap_attributions
             })
 
         return results

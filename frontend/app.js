@@ -522,6 +522,53 @@ function openForensicsModal(flow) {
 
   const departureRatio = (flow.reconstruction_error / Math.max(1e-5, flow.anomaly_threshold)).toFixed(2);
 
+  // ── Build SHAP / Anomaly Attribution block ─────────────────────────────
+  let shapBlock = "";
+  const attrs = flow.shap_attributions;
+  if (attrs && attrs.length > 0) {
+    const isZeroDay = flow.is_zero_day;
+    const maxAbs = Math.max(...attrs.map(a => a.abs_value), 1e-9);
+    const bars = attrs.map(a => {
+      const pct = Math.max(3, Math.min(100, ((a.abs_value / maxAbs) * 100))).toFixed(1);
+      const isPositive = a.shap_value >= 0;
+      const color = isZeroDay
+        ? "var(--color-purple, #a855f7)"
+        : (isPositive ? "var(--color-red)" : "var(--color-green)");
+      const sign = isPositive ? "+" : "";
+      return `
+        <div class="shap-row">
+          <div class="shap-feat" title="${a.feature}">${a.feature}</div>
+          <div class="shap-bar-wrap">
+            <div class="shap-bar" style="width:${pct}%;background:${color}"></div>
+          </div>
+          <div class="shap-val" style="color:${color}">${sign}${a.shap_value.toFixed(4)}</div>
+        </div>`;
+    }).join("");
+
+    const title = isZeroDay
+      ? "ANOMALY FEATURE ATTRIBUTIONS (AUTOENCODER DEPARTURE)"
+      : "SHAP FEATURE ATTRIBUTIONS";
+    const subtitle = isZeroDay
+      ? `Top-10 Anomaly Drivers — Reconstruction MSE: ${flow.reconstruction_error.toFixed(4)} &gt; τ ${flow.anomaly_threshold} (${departureRatio}x departure)`
+      : "Top-10 drivers — Tier-1 LightGBM local explanation";
+    const legend = isZeroDay
+      ? `<span style="color:var(--color-purple, #a855f7)">▮ Anomaly Departure from benign baseline</span>`
+      : `<span style="color:var(--color-red)">▮ Pushes toward threat</span>
+         <span style="color:var(--color-green)">▮ Pushes toward benign</span>`;
+
+    shapBlock = `
+      <div class="shap-section">
+        <div class="shap-header">
+          <span class="shap-title">${title}</span>
+          <span class="shap-subtitle">${subtitle}</span>
+        </div>
+        <div class="shap-legend">
+          ${legend}
+        </div>
+        <div class="shap-chart">${bars}</div>
+      </div>`;
+  }
+
   content.innerHTML = `
     <div class="forensics-grid">
       <div class="forensic-item">
@@ -560,7 +607,9 @@ function openForensicsModal(flow) {
     <div class="forensic-reason">
       <strong>AI Rationale:</strong> ${flow.reason}
     </div>
+    ${shapBlock}
   `;
 
   modal.classList.add("open");
 }
+
