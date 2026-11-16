@@ -213,7 +213,7 @@ impl FlowAggregator {
         let delta_us = pkt.timestamp.duration_since(self.last_time).as_micros() as f64;
         self.last_time = pkt.timestamp;
 
-        if pkt.src_ip == self.src_ip && pkt.src_port == self.dst_port {
+        if pkt.src_ip == self.src_ip && pkt.dst_ip == self.dst_ip {
             self.fwd_packets.push(pkt.payload_len as f64);
             self.fwd_iat.push(delta_us);
         } else {
@@ -346,8 +346,9 @@ async fn run_live_pcap_sniffer(device_name: Option<String>) -> Result<(), Box<dy
                         .or_insert_with(|| FlowAggregator::new(&parsed));
                     entry.add_packet(&parsed);
 
-                    // When flow has enough packets or time, emit to AI backend
-                    if entry.fwd_packets.len() >= 6 || entry.bwd_packets.len() >= 4 {
+                    // When flow has enough packets or is a rapid SYN attack probe, emit to AI backend
+                    let is_syn_probe = entry.syn_count >= 2.0 && entry.ack_count == 0.0;
+                    if entry.fwd_packets.len() >= 4 || entry.bwd_packets.len() >= 3 || is_syn_probe {
                         let record = entry.to_flow_record();
                         let payload = serde_json::json!({ "flow_data": record });
 
