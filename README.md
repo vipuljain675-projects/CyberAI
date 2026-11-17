@@ -47,14 +47,14 @@ Physical NIC (en0/eth0)
 
 ## 📊 Benchmark Results
 
-| Metric | Tier-1 (LightGBM) | Tier-2 (Autoencoder) | Combined |
+| Metric | Tier-1 (LightGBM) | Tier-2 (Autoencoder) | Combined Dual-Tier |
 |:---|:---:|:---:|:---:|
-| Known Attacks Precision/Recall | **1.000 / 1.000** | N/A | **100%** |
-| Zero-Day Quarantine Rate | 0% (missed) | **100% (1250/1250)** | **100%** |
-| Mean Benign MSE | N/A | **0.0042** | Conforms |
-| Mean Zero-Day MSE | N/A | **16.025** (3,815x) | Extreme Departure |
-| Calibrated Threshold (τ) | N/A | **0.0687** | Operating Boundary |
-| Inference Latency | < 0.5 ms | ~9.5 ms (MPS GPU) | Microsecond scale |
+| Known Attacks Accuracy / F1 | **99.45% / 0.994** | N/A | **99.45%** |
+| Zero-Day Quarantine Rate | 0% (missed signature) | **99.44% (1243/1250)** | **99.44%** |
+| Mean Benign MSE | N/A | **0.0020** | Conforms |
+| Mean Zero-Day MSE | N/A | **14.4702** (7,235x) | Extreme Departure |
+| Calibrated Threshold (τ) | N/A | **0.0155** | Operating Boundary |
+| Inference Latency | < 0.5 ms | ~9.5 ms (MPS GPU) | Sub-millisecond scale |
 
 ---
 

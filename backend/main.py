@@ -53,8 +53,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="🛡️ NIDS 2.0 — Autonomous Network Intrusion Detection API",
-    description="Dual-Tier AI Security Architecture: Supervised LightGBM + Unsupervised Deep Autoencoder",
-    version="2.0.0",
+    description="Dual-Tier AI Security Architecture: Supervised LightGBM + Unsupervised Deep Autoencoder (99.45% Accuracy)",
+    version="2.1.0",
     lifespan=lifespan
 )
 
