@@ -50,39 +50,18 @@ async function fetchModelMetadata() {
     state.threshold = data.operating_threshold_tau || 0.0687;
     const tauFormatted = `τ = ${state.threshold.toFixed(4)}`;
     
-    document.getElementById("val-tau").textContent = tauFormatted;
     const cardTau = document.getElementById("card-tau-stat");
     if (cardTau) cardTau.textContent = tauFormatted;
     const sumThresh = document.getElementById("summary-threshold");
     if (sumThresh) sumThresh.textContent = state.threshold.toFixed(4);
 
     state.prototypes = data.metadata?.prototypes || [];
-    document.getElementById("val-prototypes").textContent = state.prototypes.length || 8;
 
-    renderPrototypes(state.prototypes);
   } catch (err) {
     console.warn("Notice: /api/v1/models/info running in standard fallback mode:", err);
   }
 }
 
-function renderPrototypes(prototypes) {
-  const container = document.getElementById("prototypes-container");
-  if (!container) return;
-  container.innerHTML = "";
-
-  const items = prototypes && prototypes.length > 0 ? prototypes : Array.from({ length: 8 }, (_, i) => [0.12 * (i + 1), -0.05 * (i + 1), 0.22]);
-
-  items.slice(0, 8).forEach((p, idx) => {
-    const cell = document.createElement("div");
-    cell.className = "proto-cell";
-    const coordStr = Array.isArray(p) ? `[${p.slice(0, 3).map(n => n.toFixed(2)).join(", ")}...]` : "[0.15, -0.08, 0.41...]";
-    cell.innerHTML = `
-      <div class="proto-label">CENTROID #${idx + 1}</div>
-      <div class="proto-val">${coordStr}</div>
-    `;
-    container.appendChild(cell);
-  });
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chart.js Setup (Splunk Enterprise Clean Dark Theme)
@@ -326,16 +305,6 @@ function updateKPICards(latestFlow) {
   // Tier-1 Known Blocked Attacks prevent ~$850 in remediation/analyst hours
   // Tier-2 Zero-Day Quarantined Threats prevent ~$4,200 in critical breach/downtime damages
   const rawDollars = (state.knownCount * 850) + (state.zeroDayCount * 4200);
-  let dollarsText = "$0";
-  if (rawDollars >= 1000000) {
-    dollarsText = `$${(rawDollars / 1000000).toFixed(2)}M`;
-  } else if (rawDollars >= 1000) {
-    dollarsText = `$${rawDollars.toLocaleString()}`;
-  } else if (rawDollars > 0) {
-    dollarsText = `$${rawDollars}`;
-  }
-  const dollarsElem = document.getElementById("kpi-dollars-saved");
-  if (dollarsElem) dollarsElem.textContent = dollarsText;
 
   if (latestFlow) {
     const mseVal = latestFlow.reconstruction_error;
@@ -395,12 +364,25 @@ function insertTableRow(flow) {
   const timeStr = flow.timestamp ? flow.timestamp.split("T")[1].replace("Z", "").slice(0, 8) : new Date().toLocaleTimeString();
   const mseColor = flow.reconstruction_error >= state.threshold ? "var(--color-red)" : "var(--color-green)";
 
+  let tierDisplay = flow.detection_tier;
+  let tierPillClass = "tier-pill-blue";
+  if (flow.detection_tier && flow.detection_tier.includes("Deep Autoencoder")) {
+    tierDisplay = "Tier-2 Autoencoder";
+    tierPillClass = "tier-pill-purple";
+  } else if (flow.detection_tier && flow.detection_tier.includes("LightGBM")) {
+    tierDisplay = "Tier-1 LightGBM";
+    tierPillClass = "tier-pill-blue";
+  } else if (flow.detection_tier && flow.detection_tier.includes("Dual-Tier")) {
+    tierDisplay = "Dual-Tier Clear";
+    tierPillClass = "tier-pill-green";
+  }
+
   tr.innerHTML = `
     <td>${timeStr}</td>
     <td>${flow.source_ip}</td>
     <td>${flow.destination_ip}:${flow.destination_port}</td>
     <td><span class="badge-siem ${badgeClass}">${flow.classification}</span></td>
-    <td>${flow.detection_tier}</td>
+    <td><span class="tier-badge ${tierPillClass}" title="${flow.detection_tier}">${tierDisplay}</span></td>
     <td style="color:${mseColor}">${flow.reconstruction_error.toFixed(4)}</td>
     <td><span class="action-pill ${actionClass}">${actionText}</span></td>
   `;
@@ -467,35 +449,63 @@ function updateCharts(flow) {
 // Interactive Attack Injections (Operations Console)
 // ─────────────────────────────────────────────────────────────────────────────
 function bindEventHandlers() {
-  document.getElementById("btn-inject-benign").addEventListener("click", () => injectThreat("BENIGN"));
-  document.getElementById("btn-inject-dos").addEventListener("click", () => injectThreat("DoS"));
-  document.getElementById("btn-inject-portscan").addEventListener("click", () => injectThreat("PortScan"));
-  document.getElementById("btn-inject-zeroday").addEventListener("click", () => injectThreat("ZeroDay"));
+  // Modal close handlers (Button, Backdrop click, and ESC key)
+  const modal = document.getElementById("forensics-modal");
+  const closeBtn = document.getElementById("btn-close-modal");
+
+  if (closeBtn && modal) {
+    closeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      modal.classList.remove("open");
+    });
+  }
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        modal.classList.remove("open");
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && modal.classList.contains("open")) {
+      modal.classList.remove("open");
+    }
+  });
+
+  // Safe binding for filter dropdown
+  const filterElem = document.getElementById("filter-classification");
+  if (filterElem) {
+    filterElem.addEventListener("change", () => {
+      const tbody = document.getElementById("flow-tbody");
+      if (tbody) {
+        tbody.innerHTML = "";
+        state.flowsHistory.forEach(f => insertTableRow(f));
+      }
+    });
+  }
+
+  // Safe binding for optional injection buttons if present
+  const btnBenign = document.getElementById("btn-inject-benign");
+  if (btnBenign) btnBenign.addEventListener("click", () => injectThreat("BENIGN"));
+  const btnDos = document.getElementById("btn-inject-dos");
+  if (btnDos) btnDos.addEventListener("click", () => injectThreat("DoS"));
+  const btnPort = document.getElementById("btn-inject-portscan");
+  if (btnPort) btnPort.addEventListener("click", () => injectThreat("PortScan"));
+  const btnZero = document.getElementById("btn-inject-zeroday");
+  if (btnZero) btnZero.addEventListener("click", () => injectThreat("ZeroDay"));
 
   const toggleBtn = document.getElementById("btn-toggle-stream");
-  toggleBtn.addEventListener("click", () => {
-    state.isStreamPaused = !state.isStreamPaused;
-    document.getElementById("stream-btn-text").textContent = state.isStreamPaused ? "Resume Stream" : "Pause Stream";
-    toggleBtn.style.color = state.isStreamPaused ? "var(--color-amber)" : "var(--text-secondary)";
-  });
-
-  document.getElementById("btn-close-modal").addEventListener("click", () => {
-    document.getElementById("forensics-modal").classList.remove("open");
-  });
-
-  document.getElementById("filter-classification").addEventListener("change", () => {
-    const tbody = document.getElementById("flow-tbody");
-    tbody.innerHTML = "";
-    state.flowsHistory.forEach(f => insertTableRow(f));
-  });
-
-  // Smooth Navigation Link Handling
-  document.querySelectorAll(".nav-link").forEach(link => {
-    link.addEventListener("click", (e) => {
-      document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
-      link.parentElement.classList.add("active");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      state.isStreamPaused = !state.isStreamPaused;
+      const streamText = document.getElementById("stream-btn-text");
+      if (streamText) streamText.textContent = state.isStreamPaused ? "Resume Stream" : "Pause Stream";
+      toggleBtn.style.color = state.isStreamPaused ? "var(--color-amber)" : "var(--text-secondary)";
     });
-  });
+  }
 }
 
 async function injectThreat(type) {

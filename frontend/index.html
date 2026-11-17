@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NIDS 2.0 — Enterprise SOC Dashboard</title>
+  <title>KADAK — Enterprise SOC Dashboard</title>
   <meta name="description" content="Enterprise SIEM & Autonomous Network Intrusion Detection System with Supervised LightGBM and Deep Autoencoder Zero-Day Defense.">
 
   <!-- Enterprise Standard Typography -->
@@ -14,51 +14,9 @@
   <!-- Chart.js for High-Performance Visualizations -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.3">
 </head>
 <body>
-  <!-- Top Global Splunk-style Navigation Bar -->
-  <nav class="splunk-navbar">
-    <div class="nav-left">
-      <div class="brand">
-        <span class="brand-name">NIDS 2.0</span>
-      </div>
-      <ul class="nav-menu">
-        <li class="nav-item active"><a href="#" class="nav-link">Dashboards</a></li>
-        <li class="nav-item"><a href="#investigations" class="nav-link">Investigations</a></li>
-        <li class="nav-item"><a href="#prototypes-section" class="nav-link">Latent Manifold</a></li>
-      </ul>
-    </div>
-    <div class="nav-right">
-      <div class="status-chip" id="chip-hardware">
-        <span class="status-dot dot-green"></span>
-        <span class="status-chip-text" id="val-hardware">MPS / ARM64</span>
-      </div>
-      <div class="status-chip" id="chip-tau">
-        <span class="status-chip-text" id="val-tau">τ = 0.0687</span>
-      </div>
-      <div class="status-chip" id="chip-ws">
-        <span class="status-dot dot-green pulse"></span>
-        <span class="status-chip-text" id="ws-status-badge">LIVE WS</span>
-      </div>
-      <div class="user-avatar" title="SOC Security Analyst">SOC</div>
-    </div>
-  </nav>
-
-  <!-- Sub-header: Dashboard Title Bar -->
-  <div class="dashboard-titlebar">
-    <div class="titlebar-left">
-      <h1 class="dashboard-title">Home Dashboard</h1>
-      <span class="dashboard-badge">AUTONOMOUS CYBER DEFENSE</span>
-    </div>
-    <div class="titlebar-right">
-      <div class="timeframe-selector">
-        <span class="time-label">FEED:</span>
-        <span class="time-value">REAL-TIME TELEMETRY</span>
-      </div>
-    </div>
-  </div>
-
   <main class="dashboard-body">
     <!-- Top KPI Metrics Strip (7-Column Splunk Style) -->
     <section class="kpi-strip">
@@ -95,18 +53,10 @@
       </div>
 
       <div class="kpi-cell">
-        <div class="kpi-label">MEAN TIME TO TRIAGE</div>
+        <div class="kpi-label">AVG TIME TO DETECT</div>
         <div class="kpi-row">
           <span class="kpi-value" id="kpi-avg-latency">0.8<span class="kpi-unit">ms</span></span>
           <span class="kpi-delta delta-green"><span class="delta-arrow">▼</span> -18%</span>
-        </div>
-      </div>
-
-      <div class="kpi-cell">
-        <div class="kpi-label">DOLLARS SAVED</div>
-        <div class="kpi-row">
-          <span class="kpi-value" id="kpi-dollars-saved">$0</span>
-          <span class="kpi-delta delta-green"><span class="delta-arrow">▲</span> <span id="kpi-dollars-delta">+13%</span></span>
         </div>
       </div>
 
@@ -119,37 +69,13 @@
       </div>
     </section>
 
-    <!-- Operational Threat Injection & Stream Control Bar -->
-    <section class="ops-control-bar">
-      <div class="ops-bar-title">OPERATIONS CONSOLE</div>
-      <div class="ops-button-group">
-        <button class="ops-btn ops-btn-normal" id="btn-inject-benign">
-          <span class="btn-indicator"></span> Simulate Normal Flow
-        </button>
-        <button class="ops-btn ops-btn-attack" id="btn-inject-dos">
-          <span class="btn-indicator"></span> Inject SYN Flood (DoS)
-        </button>
-        <button class="ops-btn ops-btn-warn" id="btn-inject-portscan">
-          <span class="btn-indicator"></span> Inject Port Probe (Scan)
-        </button>
-        <button class="ops-btn ops-btn-danger" id="btn-inject-zeroday">
-          <span class="btn-indicator pulse"></span> Inject Novel Zero-Day
-        </button>
-        <button class="ops-btn ops-btn-toggle" id="btn-toggle-stream">
-          <span id="stream-btn-text">Pause Stream</span>
-        </button>
-      </div>
-    </section>
-
     <!-- Primary SOC Grid: Row 1 (Visual Analytics) -->
     <div class="soc-grid-row">
       <!-- Card 1: Autoencoder Anomaly Departure vs Threshold (Splunk SLA curve style) -->
       <div class="soc-card col-4">
         <div class="card-header">
           <h2 class="card-title">Autoencoder Reconstruction Departure</h2>
-          <div class="card-actions">
-            <span class="stat-pill" id="card-tau-stat">τ = 0.0687</span>
-          </div>
+          
         </div>
         <div class="card-body chart-card-body">
           <div class="chart-container-inner">
@@ -275,65 +201,34 @@
           <div class="perf-stats-grid">
             <div class="perf-stat-box">
               <div class="perf-stat-num" id="perf-mean-triage">0.8<span class="unit">ms</span></div>
-              <div class="perf-stat-label">Mean Time To Triage</div>
+              <div class="perf-stat-label">Avg Time To Detect</div>
             </div>
             <div class="perf-stat-box">
               <div class="perf-stat-num" id="perf-max-roundtrip">9.5<span class="unit">ms</span></div>
-              <div class="perf-stat-label">Max Inference RTT</div>
-            </div>
-            <div class="perf-stat-box">
-              <div class="perf-stat-num">16-D</div>
-              <div class="perf-stat-label">Latent Bottleneck</div>
-            </div>
-            <div class="perf-stat-box">
-              <div class="perf-stat-num" id="perf-block-rate">100%</div>
-              <div class="perf-stat-label">Containment Rate</div>
+              <div class="perf-stat-label">Max Time To Detect</div>
             </div>
           </div>
-
-          <!-- Open Incident Tiers Table -->
-          <div class="recent-incidents-header">
-            <h3 class="sub-header-title">Recent Threat Signatures</h3>
-          </div>
-          <div class="recent-incidents-list" id="recent-threats-container">
-            <div class="incident-row">
-              <span class="incident-name">SYN Flood (DoS)</span>
-              <span class="incident-tier">Tier-1 LightGBM</span>
-              <span class="incident-sev sev-high">High</span>
+          <div class="perf-diagnostics">
+            <div class="diag-item">
+              <span class="diag-label">INSPECTION ENGINE</span>
+              <span class="diag-val text-green">KADAK Autonomous Wire</span>
             </div>
-            <div class="incident-row">
-              <span class="incident-name">PortScan Recon</span>
-              <span class="incident-tier">Tier-1 LightGBM</span>
-              <span class="incident-sev sev-medium">Medium</span>
+            <div class="diag-item">
+              <span class="diag-label">TIER-1 CLASSIFIER</span>
+              <span class="diag-val">LightGBM GBDT (99.45%)</span>
             </div>
-            <div class="incident-row">
-              <span class="incident-name">Novel Latent Anomaly</span>
-              <span class="incident-tier">Tier-2 Autoencoder</span>
-              <span class="incident-sev sev-critical">Critical</span>
+            <div class="diag-item">
+              <span class="diag-label">TIER-2 MANIFOLD</span>
+              <span class="diag-val">Deep Autoencoder (99.44%)</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">ACCELERATION</span>
+              <span class="diag-val">PyTorch MPS / Metal</span>
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Bottom Section: Latent Manifold Prototypes -->
-    <section class="soc-card" id="prototypes-section" style="margin-top: 14px;">
-      <div class="card-header">
-        <div class="card-title-group">
-          <h2 class="card-title">16-D Bottleneck Latent Space Prototypes</h2>
-          <span class="card-subtitle">Normal Manifold K-Means Centroids</span>
-        </div>
-        <div class="card-legend-inline">
-          <span class="legend-item"><span class="legend-box" style="background:#22c55e;"></span> Within Manifold (&lt; 2.5)</span>
-          <span class="legend-item"><span class="legend-box" style="background:#a78bfa;"></span> Novelty Boundary (&gt; 5.0)</span>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="prototypes-grid" id="prototypes-container">
-          <!-- Populated from model metadata -->
-        </div>
-      </div>
-    </section>
   </main>
 
   <!-- Forensics Modal (Enterprise Inspection Drawer) -->
@@ -352,7 +247,7 @@
   <!-- Enterprise Footer -->
   <footer class="splunk-footer">
     <div class="footer-left">
-      <span><strong>NIDS 2.0 SOC</strong></span>
+      <span><strong>KADAK SOC</strong></span>
       <span class="footer-divider">|</span>
       <span>Enterprise Cybersecurity Dashboard</span>
       <span class="footer-divider">|</span>
@@ -363,6 +258,6 @@
     </div>
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>

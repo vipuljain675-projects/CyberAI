@@ -313,7 +313,7 @@ html, body {
 /* Splunk 7-Column KPI Strip */
 .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 2px;
@@ -687,9 +687,18 @@ html, body {
  * ───────────────────────────────────────────────────────────────────────────── */
 .table-card-body {
   padding: 0;
-  height: 320px;
+  height: 420px;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
+}
+
+.siem-table-wrapper {
+  overflow-y: auto;
+  overflow-x: auto;
+  flex: 1;
+  height: 100%;
+  min-height: 360px;
 }
 
 .card-filter-group {
@@ -832,7 +841,68 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 320px;
+  height: 420px;
+  min-height: 420px;
+}
+
+.perf-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--bg-card-sub);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  margin-top: auto;
+}
+
+.diag-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.diag-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.diag-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tier-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 2px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.tier-pill-purple {
+  background: var(--color-purple-bg);
+  border: 1px solid var(--color-purple-border);
+  color: var(--color-purple);
+}
+
+.tier-pill-blue {
+  background: var(--color-blue-bg);
+  border: 1px solid var(--color-blue-border);
+  color: var(--color-blue);
+}
+
+.tier-pill-green {
+  background: var(--color-green-bg);
+  border: 1px solid var(--color-green-border);
+  color: var(--color-green);
 }
 
 .perf-stats-grid {
@@ -1001,8 +1071,17 @@ html, body {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: 22px;
   cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s, background-color 0.15s;
+  z-index: 10;
+}
+.modal-close-btn:hover {
+  color: #ffffff;
+  background-color: var(--bg-card-sub);
 }
 
 .modal-close-btn:hover {
