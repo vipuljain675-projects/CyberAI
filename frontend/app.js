@@ -6,9 +6,8 @@
  */
 
 // Global Dashboard State
-const EVENT_BUCKET_MS = 60_000;
-const EVENT_BUCKET_LIMIT = 20;
-const EVENT_SERIES = [
+const FLOW_CLASSES = [
+  { label: "Benign", classification: "BENIGN", color: "#22c55e" },
   { label: "DoS", classification: "DoS", color: "#e55353" },
   { label: "PortScan", classification: "PortScan", color: "#f59e0b" },
   { label: "Zero-Day", classification: "Infiltration_ZeroDay", color: "#a78bfa" },
@@ -33,9 +32,7 @@ const state = {
   prototypes: [],
   flowsHistory: [],
   flowReceiveTimes: [],
-  eventBuckets: new Map(),
-  eventWindowStart: null,
-  latestEventBucket: null,
+  scoreTimelineClasses: [],
   isStreamPaused: false,
   topologyZoom: 1,
   selectedEndpoint: null,
@@ -146,23 +143,25 @@ function initCharts() {
     }
   });
 
-  // 2. Classified attack flows per minute.
+  // 2. Per-flow heuristic model score, colored by predicted class.
   const ctxEvents = document.getElementById("chart-events-timeline").getContext("2d");
   state.charts.eventsTimeline = new Chart(ctxEvents, {
     type: "line",
     data: {
       labels: [],
       datasets: [
-        ...EVENT_SERIES.map(series => ({
-          label: series.label,
+        {
+          label: "Heuristic anomaly score",
           data: [],
-          borderColor: series.color,
+          borderColor: "#8b9cff",
           borderWidth: 1.8,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          stepped: "middle",
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: [],
+          pointBorderColor: [],
+          tension: 0.15,
           fill: false
-        }))
+        }
       ]
     },
     options: {
@@ -177,9 +176,11 @@ function initCharts() {
         y: {
           grid: { color: gridColor },
           beginAtZero: true,
+          min: 0,
+          max: 100,
           title: {
             display: true,
-            text: "Flows / minute",
+            text: "Heuristic score (0–100)",
             color: tickColor,
             font: sansFont
           },
@@ -192,7 +193,15 @@ function initCharts() {
         }
       },
       plugins: {
-        legend: { display: false } // Custom legend already rendered in HTML
+        legend: { display: false }, // Class colors are shown in the custom legend.
+        tooltip: {
+          callbacks: {
+            label(context) {
+              const classification = state.scoreTimelineClasses[context.dataIndex] || "Unknown";
+              return `${classification}: ${context.parsed.y.toFixed(1)} / 100 (heuristic)`;
+            }
+          }
+        }
       }
     }
   });
@@ -673,48 +682,25 @@ function insertTableRow(flow) {
 function updateCharts(flow) {
   const receivedAt = Date.parse(flow.timestamp);
   const eventTime = Number.isFinite(receivedAt) ? receivedAt : Date.now();
-  const eventBucket = Math.floor(eventTime / EVENT_BUCKET_MS) * EVENT_BUCKET_MS;
   const chartEvents = state.charts.eventsTimeline;
-  const classificationIndex = EVENT_SERIES.findIndex(
-    series => series.classification === flow.classification
-  );
+  const score = Number(flow.anomaly_score);
+  if (Number.isFinite(score)) {
+    const classColor = FLOW_CLASSES.find(item => item.classification === flow.classification)?.color || "#94a3b8";
+    const dataset = chartEvents.data.datasets[0];
+    chartEvents.data.labels.push(new Date(eventTime).toLocaleTimeString().split(" ")[0]);
+    dataset.data.push(score);
+    dataset.pointBackgroundColor.push(classColor);
+    dataset.pointBorderColor.push(classColor);
+    state.scoreTimelineClasses.push(flow.classification || "Unknown");
 
-  if (state.latestEventBucket === null || eventBucket > state.latestEventBucket) {
-    state.latestEventBucket = eventBucket;
-  }
-  if (state.eventWindowStart === null) state.eventWindowStart = eventBucket;
-
-  const firstVisibleBucket = Math.max(
-    state.eventWindowStart,
-    state.latestEventBucket - (EVENT_BUCKET_LIMIT - 1) * EVENT_BUCKET_MS
-  );
-  state.eventWindowStart = firstVisibleBucket;
-
-  if (eventBucket >= firstVisibleBucket && eventBucket <= state.latestEventBucket) {
-    if (!state.eventBuckets.has(eventBucket)) {
-      state.eventBuckets.set(eventBucket, EVENT_SERIES.map(() => 0));
-    }
-    if (classificationIndex >= 0) {
-      state.eventBuckets.get(eventBucket)[classificationIndex] += 1;
+    if (chartEvents.data.labels.length > 20) {
+      chartEvents.data.labels.shift();
+      dataset.data.shift();
+      dataset.pointBackgroundColor.shift();
+      dataset.pointBorderColor.shift();
+      state.scoreTimelineClasses.shift();
     }
   }
-
-  for (const bucket of state.eventBuckets.keys()) {
-    if (bucket < firstVisibleBucket || bucket > state.latestEventBucket) {
-      state.eventBuckets.delete(bucket);
-    }
-  }
-
-  const visibleBuckets = [];
-  for (let bucket = firstVisibleBucket; bucket <= state.latestEventBucket; bucket += EVENT_BUCKET_MS) {
-    visibleBuckets.push(bucket);
-  }
-  chartEvents.data.labels = visibleBuckets.map(bucket =>
-    new Date(bucket).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  );
-  chartEvents.data.datasets.forEach((dataset, index) => {
-    dataset.data = visibleBuckets.map(bucket => state.eventBuckets.get(bucket)?.[index] ?? 0);
-  });
   chartEvents.update("none");
 
   // 1. Update MSE Departure Chart
