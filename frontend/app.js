@@ -23,7 +23,12 @@ const state = {
   threshold: 0.0687,
   prototypes: [],
   flowsHistory: [],
+  flowReceiveTimes: [],
   isStreamPaused: false,
+  topologyZoom: 1,
+  selectedEndpoint: null,
+  topologyPositions: new Map(),
+  topologyDefaultPositions: new Map(),
   charts: {
     mseTimeline: null,
     eventsTimeline: null,
@@ -36,9 +41,12 @@ const state = {
 // ─────────────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
   initCharts();
+  renderTopology();
   await fetchModelMetadata();
   initWebSocket();
   bindEventHandlers();
+  updatePerformanceMetrics();
+  setInterval(updatePerformanceMetrics, 1000);
 });
 
 async function fetchModelMetadata() {
@@ -67,10 +75,10 @@ async function fetchModelMetadata() {
 // Chart.js Setup (Splunk Enterprise Clean Dark Theme)
 // ─────────────────────────────────────────────────────────────────────────────
 function initCharts() {
-  const gridColor = "#1a1e28";
-  const tickColor = "#5e6878";
-  const monoFont = { family: "JetBrains Mono", size: 10 };
-  const sansFont = { family: "Inter", size: 10.5 };
+  const gridColor = "#202822";
+  const tickColor = "#788e90";
+  const monoFont = { family: "DM Sans", size: 10.5 };
+  const sansFont = { family: "DM Sans", size: 11 };
 
   // 1. Autoencoder Anomaly Departure vs Threshold Curve (Splunk SLA curve)
   const ctxMSE = document.getElementById("chart-mse-timeline").getContext("2d");
@@ -80,7 +88,7 @@ function initCharts() {
       labels: [],
       datasets: [
         {
-          label: "Flow MSE",
+          label: "Model error",
           data: [],
           borderColor: "#22c55e",
           borderWidth: 1.8,
@@ -137,32 +145,45 @@ function initCharts() {
           label: "Benign",
           data: [],
           borderColor: "#22c55e",
-          borderWidth: 1.5,
+          borderWidth: 1.8,
           pointRadius: 2,
+          pointHoverRadius: 4,
           tension: 0.3
         },
         {
           label: "DoS",
           data: [],
           borderColor: "#e55353",
-          borderWidth: 1.5,
+          borderWidth: 1.8,
           pointRadius: 2,
+          pointHoverRadius: 4,
           tension: 0.3
         },
         {
           label: "PortScan",
           data: [],
           borderColor: "#f59e0b",
-          borderWidth: 1.5,
+          borderWidth: 1.8,
           pointRadius: 2,
+          pointHoverRadius: 4,
           tension: 0.3
         },
         {
           label: "Zero-Day",
           data: [],
           borderColor: "#a78bfa",
-          borderWidth: 1.5,
+          borderWidth: 1.8,
           pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
+        },
+        {
+          label: "Brute Force",
+          data: [],
+          borderColor: "#9bb9bb",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
           tension: 0.3
         }
       ]
@@ -174,12 +195,12 @@ function initCharts() {
       scales: {
         x: {
           grid: { color: gridColor },
-          ticks: { color: tickColor, font: monoFont, maxTicksLimit: 6 }
+          ticks: { color: tickColor, font: monoFont, maxTicksLimit: 8 }
         },
         y: {
           grid: { color: gridColor },
           ticks: { color: tickColor, font: monoFont, stepSize: 1 },
-          suggestedMin: 0
+          beginAtZero: true
         }
       },
       plugins: {
@@ -228,6 +249,10 @@ function initWebSocket() {
   }
 
   socket.onopen = () => {
+    // A backend restart can change the inference path; don't mix old timings into new percentiles.
+    state.latencies = [];
+    state.flowReceiveTimes = [];
+    updatePerformanceMetrics();
     wsBadge.textContent = "LIVE WS";
     console.log("Connected to nids> mission control live stream.");
   };
@@ -264,6 +289,9 @@ function handleIncomingFlow(flow) {
   state.totalFlows++;
   state.flowsHistory.unshift(flow);
   if (state.flowsHistory.length > 100) state.flowsHistory.pop();
+  const receivedAt = Date.now();
+  state.flowReceiveTimes.push(receivedAt);
+  state.flowReceiveTimes = state.flowReceiveTimes.filter(time => receivedAt - time <= 10000);
 
   const cls = flow.classification;
   if (cls === "BENIGN") {
@@ -280,6 +308,238 @@ function handleIncomingFlow(flow) {
   updateKPICards(flow);
   insertTableRow(flow);
   updateCharts(flow);
+  renderTopology();
+}
+
+function renderTopology() {
+  const graph = document.getElementById("topology-graph");
+  const empty = document.getElementById("topology-empty");
+  if (!graph || !empty) return;
+
+  const endpoints = new Map();
+  const connections = new Map();
+  for (const flow of state.flowsHistory) {
+    const source = String(flow.source_ip || "").trim();
+    const destination = String(flow.destination_ip || "").trim();
+    if (!source || !destination) continue;
+    const classification = flow.classification || "BENIGN";
+
+    for (const [ip, peer] of [[source, destination], [destination, source]]) {
+      if (!endpoints.has(ip)) {
+        endpoints.set(ip, {
+          ip, flows: 0, peers: new Set(), ports: new Map(),
+          lastSeen: flow.timestamp || "", classification
+        });
+      }
+      const endpoint = endpoints.get(ip);
+      endpoint.flows++;
+      endpoint.peers.add(peer);
+      if (endpoint.classification === "BENIGN" && classification !== "BENIGN") {
+        endpoint.classification = classification;
+      }
+    }
+
+    const edgeKey = `${source}\u0000${destination}`;
+    if (!connections.has(edgeKey)) {
+      connections.set(edgeKey, {
+        source, destination, port: flow.destination_port, count: 0, classification
+      });
+    }
+    const edge = connections.get(edgeKey);
+    edge.count++;
+    if (edge.classification === "BENIGN" && classification !== "BENIGN") {
+      edge.classification = classification;
+    }
+
+    if (flow.destination_port !== undefined && flow.destination_port !== null) {
+      const ports = endpoints.get(source).ports;
+      const port = String(flow.destination_port);
+      ports.set(port, (ports.get(port) || 0) + 1);
+    }
+  }
+
+  const nodes = [...endpoints.values()].sort((a, b) => b.flows - a.flows).slice(0, 14);
+  const visible = new Set(nodes.map(node => node.ip));
+  const edges = [...connections.values()]
+    .filter(edge => visible.has(edge.source) && visible.has(edge.destination))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 22);
+
+  empty.hidden = nodes.length > 0;
+  graph.replaceChildren();
+  const viewGroup = svgElement("g", {
+    transform: `translate(300 150) scale(${state.topologyZoom}) translate(-300 -150)`
+  });
+  graph.appendChild(viewGroup);
+
+  const defs = svgElement("defs");
+  const marker = svgElement("marker", {
+    id: "topology-arrow", viewBox: "0 0 10 10", refX: "8", refY: "5",
+    markerWidth: "5", markerHeight: "5", orient: "auto-start-reverse"
+  });
+  marker.appendChild(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#788e90" }));
+  defs.appendChild(marker);
+  viewGroup.appendChild(defs);
+
+  const positions = new Map();
+  for (const node of nodes) {
+    const position = state.topologyPositions.get(node.ip)
+      || state.topologyDefaultPositions.get(node.ip);
+    if (position) positions.set(node.ip, position);
+  }
+
+  const circleSlots = Array.from({ length: 56 }, (_, index) => {
+    const angle = -Math.PI / 2 + (2 * Math.PI * index / 56);
+    return { x: 300 + Math.cos(angle) * 190, y: 150 + Math.sin(angle) * 90 };
+  });
+  for (const node of nodes) {
+    if (positions.has(node.ip)) continue;
+    let bestPosition = null;
+    let bestSpacing = -1;
+    for (const candidate of circleSlots) {
+      const nearest = positions.size
+        ? Math.min(...[...positions.values()].map(point => Math.hypot(point.x - candidate.x, point.y - candidate.y)))
+        : Infinity;
+      if (nearest > bestSpacing) {
+        bestSpacing = nearest;
+        bestPosition = candidate;
+      }
+    }
+    positions.set(node.ip, bestPosition);
+    state.topologyDefaultPositions.set(node.ip, bestPosition);
+  }
+
+  if (nodes.length && !visible.has(state.selectedEndpoint)) {
+    state.selectedEndpoint = nodes[0].ip;
+  }
+
+  for (const edge of edges) {
+    const from = positions.get(edge.source);
+    const to = positions.get(edge.destination);
+    if (!from || !to) continue;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const inset = Math.min(25, length / 3);
+    const line = svgElement("line", {
+      x1: from.x + dx / length * inset,
+      y1: from.y + dy / length * inset,
+      x2: to.x - dx / length * inset,
+      y2: to.y - dy / length * inset,
+      class: "topology-edge", stroke: topologyColor(edge.classification),
+      "marker-end": "url(#topology-arrow)"
+    });
+    const title = svgElement("title");
+    title.textContent = `${edge.source} → ${edge.destination}${edge.port ? `:${edge.port}` : ""} · ${edge.count} flow${edge.count === 1 ? "" : "s"}`;
+    line.appendChild(title);
+    viewGroup.appendChild(line);
+
+    if (edge.port) {
+      const label = svgElement("text", {
+        x: (from.x + to.x) / 2 + (dy / length) * 9,
+        y: (from.y + to.y) / 2 - (dx / length) * 9,
+        class: "topology-edge-label"
+      });
+      label.textContent = `:${edge.port}`;
+      viewGroup.appendChild(label);
+    }
+  }
+
+  nodes.forEach(node => {
+    const point = positions.get(node.ip);
+    const color = topologyColor(node.classification);
+    const radius = Math.min(23, 16 + Math.log2(node.flows + 1) * 2);
+    const group = svgElement("g", {
+      class: `topology-node${node.ip === state.selectedEndpoint ? " selected" : ""}`,
+      "data-endpoint": node.ip,
+      tabindex: "0",
+      role: "button",
+      "aria-label": `Endpoint ${node.ip}, ${node.flows} flows`
+    });
+    group.appendChild(svgElement("circle", {
+      cx: point.x, cy: point.y, r: radius, fill: "#07100a", stroke: color
+    }));
+    const count = svgElement("text", {
+      x: point.x, y: point.y, class: "topology-node-count"
+    });
+    count.textContent = String(node.flows);
+    group.appendChild(count);
+    const label = svgElement("text", {
+      x: point.x, y: point.y + radius + 13, class: "topology-node-label"
+    });
+    label.textContent = shortenEndpoint(node.ip);
+    group.appendChild(label);
+    const title = svgElement("title");
+    title.textContent = `${node.ip} · ${node.peers.size} connected endpoint${node.peers.size === 1 ? "" : "s"}`;
+    group.appendChild(title);
+    viewGroup.appendChild(group);
+  });
+
+  if (!nodes.length) {
+    state.selectedEndpoint = null;
+    updateTopologyInfo(null);
+    return;
+  }
+  updateTopologyInfo(endpoints.get(state.selectedEndpoint));
+}
+
+function svgElement(name, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  return element;
+}
+
+function topologyColor(classification) {
+  if (classification === "DoS") return "#e55353";
+  if (classification === "PortScan") return "#f59e0b";
+  if (classification === "Infiltration_ZeroDay") return "#a78bfa";
+  return "#22c55e";
+}
+
+function shortenEndpoint(ip) {
+  return ip.length > 20 ? `${ip.slice(0, 9)}…${ip.slice(-8)}` : ip;
+}
+
+function updateTopologyInfo(endpoint) {
+  const info = document.getElementById("topology-info");
+  if (!info) return;
+  info.replaceChildren();
+
+  const kicker = document.createElement("div");
+  kicker.className = "topology-info-kicker";
+  kicker.textContent = endpoint ? "OBSERVED ENDPOINT" : "SELECT AN ENDPOINT";
+  info.appendChild(kicker);
+  const title = document.createElement("div");
+  title.className = "topology-info-title";
+  title.textContent = endpoint ? endpoint.ip : "No endpoint selected";
+  info.appendChild(title);
+
+  if (endpoint) {
+    const facts = document.createElement("div");
+    facts.className = "topology-facts";
+    const topPort = [...endpoint.ports.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    for (const [label, value] of [
+      ["Flows", endpoint.flows],
+      ["Connections", endpoint.peers.size],
+      ["Top port", topPort],
+      ["Last seen", endpoint.lastSeen ? new Date(endpoint.lastSeen).toLocaleTimeString() : "Now"]
+    ]) {
+      const row = document.createElement("div");
+      row.className = "topology-fact";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const valueNode = document.createElement("span");
+      valueNode.textContent = String(value);
+      row.append(name, valueNode);
+      facts.appendChild(row);
+    }
+    info.appendChild(facts);
+  } else {
+    const message = document.createElement("p");
+    message.textContent = "Endpoints appear here as traffic arrives.";
+    info.appendChild(message);
+  }
+
 }
 
 function updateKPICards(latestFlow) {
@@ -294,12 +554,7 @@ function updateKPICards(latestFlow) {
 
   const avgLat = state.latencies.reduce((a, b) => a + b, 0) / Math.max(1, state.latencies.length);
   document.getElementById("kpi-avg-latency").innerHTML = `${avgLat.toFixed(1)}<span class="kpi-unit">ms</span>`;
-  const perfTriage = document.getElementById("perf-mean-triage");
-  if (perfTriage) perfTriage.innerHTML = `${avgLat.toFixed(1)}<span class="unit">ms</span>`;
-
-  const maxLat = Math.max(...state.latencies);
-  const perfMax = document.getElementById("perf-max-roundtrip");
-  if (perfMax) perfMax.innerHTML = `${maxLat.toFixed(1)}<span class="unit">ms</span>`;
+  updatePerformanceMetrics();
 
   // Enterprise Cybersecurity ROI Valuation (Ponemon / IBM Security Metrics):
   // Tier-1 Known Blocked Attacks prevent ~$850 in remediation/analyst hours
@@ -319,7 +574,7 @@ function updateKPICards(latestFlow) {
       mseStatus.innerHTML = `<span class="delta-arrow">▲</span> &gt; τ`;
       if (sumVerdict) {
         sumVerdict.className = "summary-val text-red";
-        sumVerdict.textContent = "Exceeded (Anomaly)";
+        sumVerdict.textContent = "Above threshold";
       }
     } else {
       mseStatus.className = "kpi-delta delta-green";
@@ -329,6 +584,39 @@ function updateKPICards(latestFlow) {
         sumVerdict.textContent = "Nominal (Within τ)";
       }
     }
+  }
+}
+
+function percentile(values, fraction) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * fraction;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function updatePerformanceMetrics() {
+  const percentiles = [
+    ["perf-p50", 0.50],
+    ["perf-p95", 0.95],
+    ["perf-p99", 0.99]
+  ];
+  for (const [id, fraction] of percentiles) {
+    const element = document.getElementById(id);
+    const value = percentile(state.latencies, fraction);
+    if (element && value !== null) {
+      element.innerHTML = `${value.toFixed(1)}<span class="unit">ms</span>`;
+    }
+  }
+
+  const now = Date.now();
+  const recent = state.flowReceiveTimes.filter(time => now - time <= 10000);
+  const elapsed = recent.length > 1 ? Math.max(1, (now - recent[0]) / 1000) : 1;
+  const throughput = recent.length / elapsed;
+  const throughputElement = document.getElementById("perf-throughput");
+  if (throughputElement) {
+    throughputElement.innerHTML = `${throughput.toFixed(1)}<span class="unit">flows/s</span>`;
   }
 }
 
@@ -410,23 +698,19 @@ function updateCharts(flow) {
   }
   chartMSE.update("none");
 
-  // 2. Update Notable Events Over Time Chart
+  // 2. Update event-type timeline.
   const chartEvents = state.charts.eventsTimeline;
   chartEvents.data.labels.push(timeLabel);
 
-  const benignRate = flow.classification === "BENIGN" ? 1 : 0;
-  const dosRate = flow.classification === "DoS" ? 1 : 0;
-  const scanRate = flow.classification === "PortScan" ? 1 : 0;
-  const zeroRate = flow.classification === "Infiltration_ZeroDay" ? 1 : 0;
-
-  chartEvents.data.datasets[0].data.push(benignRate);
-  chartEvents.data.datasets[1].data.push(dosRate);
-  chartEvents.data.datasets[2].data.push(scanRate);
-  chartEvents.data.datasets[3].data.push(zeroRate);
+  chartEvents.data.datasets[0].data.push(flow.classification === "BENIGN" ? 1 : 0);
+  chartEvents.data.datasets[1].data.push(flow.classification === "DoS" ? 1 : 0);
+  chartEvents.data.datasets[2].data.push(flow.classification === "PortScan" ? 1 : 0);
+  chartEvents.data.datasets[3].data.push(flow.classification === "Infiltration_ZeroDay" ? 1 : 0);
+  chartEvents.data.datasets[4].data.push(flow.classification === "BruteForce" ? 1 : 0);
 
   if (chartEvents.data.labels.length > 20) {
     chartEvents.data.labels.shift();
-    chartEvents.data.datasets.forEach(d => d.data.shift());
+    chartEvents.data.datasets.forEach(dataset => dataset.data.shift());
   }
   chartEvents.update("none");
 
@@ -473,6 +757,74 @@ function bindEventHandlers() {
     if (e.key === "Escape" && modal && modal.classList.contains("open")) {
       modal.classList.remove("open");
     }
+  });
+
+  const topologySvg = document.getElementById("topology-svg");
+  if (topologySvg) {
+    let draggedEndpoint = null;
+    topologySvg.addEventListener("click", (event) => {
+      const node = event.target.closest("[data-endpoint]");
+      if (!node) return;
+      state.selectedEndpoint = node.getAttribute("data-endpoint");
+      renderTopology();
+    });
+    topologySvg.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const node = event.target.closest("[data-endpoint]");
+      if (!node) return;
+      draggedEndpoint = node.getAttribute("data-endpoint");
+      state.selectedEndpoint = draggedEndpoint;
+      topologySvg.setPointerCapture(event.pointerId);
+      renderTopology();
+      event.preventDefault();
+    });
+    topologySvg.addEventListener("pointermove", (event) => {
+      if (!draggedEndpoint) return;
+      const matrix = topologySvg.getScreenCTM();
+      if (!matrix) return;
+      const point = topologySvg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const viewPoint = point.matrixTransform(matrix.inverse());
+      const worldPoint = {
+        x: Math.max(28, Math.min(572, 300 + (viewPoint.x - 300) / state.topologyZoom)),
+        y: Math.max(28, Math.min(272, 150 + (viewPoint.y - 150) / state.topologyZoom))
+      };
+      state.topologyPositions.set(draggedEndpoint, worldPoint);
+      renderTopology();
+    });
+    const stopDragging = (event) => {
+      draggedEndpoint = null;
+      if (topologySvg.hasPointerCapture(event.pointerId)) {
+        topologySvg.releasePointerCapture(event.pointerId);
+      }
+    };
+    topologySvg.addEventListener("pointerup", stopDragging);
+    topologySvg.addEventListener("pointercancel", stopDragging);
+    topologySvg.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const node = event.target.closest("[data-endpoint]");
+      if (!node) return;
+      event.preventDefault();
+      state.selectedEndpoint = node.getAttribute("data-endpoint");
+      renderTopology();
+    });
+  }
+
+  const zoomIn = document.getElementById("topology-zoom-in");
+  const zoomOut = document.getElementById("topology-zoom-out");
+  const zoomReset = document.getElementById("topology-zoom-reset");
+  if (zoomIn) zoomIn.addEventListener("click", () => {
+    state.topologyZoom = Math.min(1.8, state.topologyZoom + 0.15);
+    renderTopology();
+  });
+  if (zoomOut) zoomOut.addEventListener("click", () => {
+    state.topologyZoom = Math.max(0.7, state.topologyZoom - 0.15);
+    renderTopology();
+  });
+  if (zoomReset) zoomReset.addEventListener("click", () => {
+    state.topologyZoom = 1;
+    renderTopology();
   });
 
   // Safe binding for filter dropdown
@@ -526,11 +878,46 @@ async function injectThreat(type) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Forensic Modal Details
 // ─────────────────────────────────────────────────────────────────────────────
+function renderMitreMapping(classification) {
+  const techniques = {
+    DoS: {
+      id: "T1498",
+      name: "Network Denial of Service",
+      url: "https://attack.mitre.org/techniques/T1498/"
+    },
+    PortScan: {
+      id: "T1046",
+      name: "Network Service Discovery",
+      url: "https://attack.mitre.org/techniques/T1046/"
+    },
+    BruteForce: {
+      id: "T1110",
+      name: "Brute Force",
+      url: "https://attack.mitre.org/techniques/T1110/"
+    }
+  };
+  const technique = techniques[classification];
+  const matchContent = technique
+    ? `<a class="mitre-technique" href="${technique.url}" target="_blank" rel="noopener noreferrer">
+         <span class="mitre-id">${technique.id}</span>
+         <span class="mitre-name">${technique.name}</span>
+         <span class="mitre-link-icon" aria-hidden="true">↗</span>
+       </a>
+       <p class="mitre-caption">Suggested from the event type</p>`
+    : `<div class="mitre-unmapped">No direct technique match for this event type.</div>`;
+
+  return `<section class="mitre-mapping" aria-label="MITRE ATT&CK mapping">
+    <div class="mitre-heading">MITRE ATT&amp;CK</div>
+    ${matchContent}
+  </section>`;
+}
+
 function openForensicsModal(flow) {
   const modal = document.getElementById("forensics-modal");
   const content = document.getElementById("modal-content");
 
   const departureRatio = (flow.reconstruction_error / Math.max(1e-5, flow.anomaly_threshold)).toFixed(2);
+  const mitreMapping = renderMitreMapping(flow.classification);
 
   // ── Build SHAP / Anomaly Attribution block ─────────────────────────────
   let shapBlock = "";
@@ -556,15 +943,15 @@ function openForensicsModal(flow) {
     }).join("");
 
     const title = isZeroDay
-      ? "ANOMALY FEATURE ATTRIBUTIONS (AUTOENCODER DEPARTURE)"
-      : "SHAP FEATURE ATTRIBUTIONS";
+      ? "WHAT MADE THIS LOOK UNUSUAL"
+      : "WHAT AFFECTED THE DETECTION";
     const subtitle = isZeroDay
-      ? `Top-10 Anomaly Drivers — Reconstruction MSE: ${flow.reconstruction_error.toFixed(4)} &gt; τ ${flow.anomaly_threshold} (${departureRatio}x departure)`
-      : "Top-10 drivers — Tier-1 LightGBM local explanation";
+      ? `Main signals — model error: ${flow.reconstruction_error.toFixed(4)} above threshold ${flow.anomaly_threshold}`
+      : "Main signals behind this result";
     const legend = isZeroDay
-      ? `<span style="color:var(--color-purple, #a855f7)">▮ Anomaly Departure from benign baseline</span>`
-      : `<span style="color:var(--color-red)">▮ Pushes toward threat</span>
-         <span style="color:var(--color-green)">▮ Pushes toward benign</span>`;
+      ? `<span style="color:var(--color-purple, #a855f7)">▮ Difference from normal traffic</span>`
+      : `<span style="color:var(--color-red)">▮ Points to a threat</span>
+         <span style="color:var(--color-green)">▮ Points to normal traffic</span>`;
 
     shapBlock = `
       <div class="shap-section">
@@ -598,25 +985,26 @@ function openForensicsModal(flow) {
         <div class="forensic-val" style="color:var(--color-red)">${flow.quarantine_action}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">RECONSTRUCTION MSE</div>
+        <div class="forensic-label">MODEL ERROR</div>
         <div class="forensic-val">${flow.reconstruction_error.toFixed(6)}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">THRESHOLD (τ)</div>
-        <div class="forensic-val">${flow.anomaly_threshold} (${departureRatio}x departure)</div>
+        <div class="forensic-label">ALERT THRESHOLD</div>
+        <div class="forensic-val">${flow.anomaly_threshold} (${departureRatio}x above)</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">PROTOTYPE DISTANCE</div>
+        <div class="forensic-label">PATTERN DISTANCE</div>
         <div class="forensic-val">${flow.prototype_distance ? flow.prototype_distance.toFixed(4) : "N/A"}</div>
       </div>
       <div class="forensic-item">
-        <div class="forensic-label">INFERENCE ROUNDTRIP</div>
+        <div class="forensic-label">PROCESSING TIME</div>
         <div class="forensic-val">${flow.latency_ms ? flow.latency_ms.toFixed(2) : "0.80"} ms</div>
       </div>
     </div>
     <div class="forensic-reason">
-      <strong>AI Rationale:</strong> ${flow.reason}
+      <strong>Why it was flagged:</strong> ${flow.reason}
     </div>
+    ${mitreMapping}
     ${shapBlock}
   `;
 

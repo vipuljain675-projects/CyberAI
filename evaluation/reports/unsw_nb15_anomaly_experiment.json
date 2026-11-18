@@ -1,0 +1,227 @@
+{
+  "dataset": "UNSW-NB15 official row-count partitions; mirror filenames checked by documented sizes",
+  "official_source": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+  "protocol": "Isolation Forest fit on benign training rows only; thresholds set to validation-benign 98th/99.5th score quantiles; supervised threshold chosen on validation for >=90% recall; report supervised, unsupervised, and OR union on held-out test",
+  "train_rows": 175341,
+  "test_rows": 82332,
+  "supervised_attack_threshold": 0.7330240119607627,
+  "anomaly_thresholds": {
+    "validation_fpr_2pct": 0.5492620730916341,
+    "validation_fpr_0_5pct": 0.5869267926046071
+  },
+  "validation": {
+    "supervised": {
+      "accuracy": 0.9275143288944652,
+      "macro_f1": 0.9204671094044723,
+      "balanced_accuracy": 0.9430545671911565,
+      "attack_precision": 0.9927907943990018,
+      "attack_recall": 0.9000377058108844,
+      "attack_f1": 0.944141689373297,
+      "benign_false_positive_rate": 0.013928571428571429,
+      "attack_roc_auc": 0.9937366346366777,
+      "attack_average_precision": 0.9970427627210642,
+      "confusion_matrix": [
+        [
+          11044,
+          156
+        ],
+        [
+          2386,
+          21483
+        ]
+      ]
+    },
+    "isolation_forest_validation_fpr_2pct": {
+      "accuracy": 0.39254042031423764,
+      "macro_f1": 0.35755215986785577,
+      "balanced_accuracy": 0.5484203116864074,
+      "attack_precision": 0.9253978779840849,
+      "attack_recall": 0.11692990908710042,
+      "attack_f1": 0.20762506974149153,
+      "benign_false_positive_rate": 0.020089285714285716,
+      "attack_roc_auc": 0.8352811327304395,
+      "attack_average_precision": 0.8921798954800189,
+      "confusion_matrix": [
+        [
+          10975,
+          225
+        ],
+        [
+          21078,
+          2791
+        ]
+      ]
+    },
+    "union_validation_fpr_2pct": {
+      "accuracy": 0.9220108928113149,
+      "macro_f1": 0.9140283990101807,
+      "balanced_accuracy": 0.933798725782994,
+      "attack_precision": 0.9828200676231381,
+      "attack_recall": 0.9011688801374167,
+      "attack_f1": 0.9402251120096164,
+      "benign_false_positive_rate": 0.03357142857142857,
+      "attack_roc_auc": null,
+      "attack_average_precision": null,
+      "confusion_matrix": [
+        [
+          10824,
+          376
+        ],
+        [
+          2359,
+          21510
+        ]
+      ]
+    },
+    "isolation_forest_validation_fpr_0_5pct": {
+      "accuracy": 0.35567025007841685,
+      "macro_f1": 0.3009097933059998,
+      "balanced_accuracy": 0.5253394570363232,
+      "attack_precision": 0.9595667870036101,
+      "attack_recall": 0.05567891407264653,
+      "attack_f1": 0.10525065336184367,
+      "benign_false_positive_rate": 0.005,
+      "attack_roc_auc": 0.8352811327304395,
+      "attack_average_precision": 0.8921798954800189,
+      "confusion_matrix": [
+        [
+          11144,
+          56
+        ],
+        [
+          22540,
+          1329
+        ]
+      ]
+    },
+    "union_validation_fpr_0_5pct": {
+      "accuracy": 0.9260030226125638,
+      "macro_f1": 0.9187223405079509,
+      "balanced_accuracy": 0.9406411053937265,
+      "attack_precision": 0.9902747050147492,
+      "attack_recall": 0.9001214965017387,
+      "attack_f1": 0.9430483924064523,
+      "benign_false_positive_rate": 0.018839285714285715,
+      "attack_roc_auc": null,
+      "attack_average_precision": null,
+      "confusion_matrix": [
+        [
+          10989,
+          211
+        ],
+        [
+          2384,
+          21485
+        ]
+      ]
+    }
+  },
+  "test": {
+    "supervised": {
+      "accuracy": 0.9333551960355634,
+      "macro_f1": 0.9328096133849055,
+      "balanced_accuracy": 0.9337994388547199,
+      "attack_precision": 0.9485130237060717,
+      "attack_recall": 0.9294096885202506,
+      "attack_f1": 0.9388641909282348,
+      "benign_false_positive_rate": 0.06181081081081081,
+      "attack_roc_auc": 0.986124190059644,
+      "attack_average_precision": 0.9897713135539874,
+      "confusion_matrix": [
+        [
+          34713,
+          2287
+        ],
+        [
+          3200,
+          42132
+        ]
+      ]
+    },
+    "isolation_forest_validation_fpr_2pct": {
+      "accuracy": 0.5313608317543604,
+      "macro_f1": 0.465430857088882,
+      "balanced_accuracy": 0.5727670126227877,
+      "attack_precision": 0.9172644076181053,
+      "attack_recall": 0.16361510632665666,
+      "attack_f1": 0.27769665655771464,
+      "benign_false_positive_rate": 0.01808108108108108,
+      "attack_roc_auc": 0.7821807630669582,
+      "attack_average_precision": 0.7923615407451958,
+      "confusion_matrix": [
+        [
+          36331,
+          669
+        ],
+        [
+          37915,
+          7417
+        ]
+      ]
+    },
+    "union_validation_fpr_2pct": {
+      "accuracy": 0.926735655638148,
+      "macro_f1": 0.926013512288068,
+      "balanced_accuracy": 0.9262234529155469,
+      "attack_precision": 0.9353702308680817,
+      "attack_recall": 0.9312847436689314,
+      "attack_f1": 0.9333230163818451,
+      "benign_false_positive_rate": 0.07883783783783783,
+      "attack_roc_auc": null,
+      "attack_average_precision": null,
+      "confusion_matrix": [
+        [
+          34083,
+          2917
+        ],
+        [
+          3115,
+          42217
+        ]
+      ]
+    },
+    "isolation_forest_validation_fpr_0_5pct": {
+      "accuracy": 0.48752611378321914,
+      "macro_f1": 0.3865805774979886,
+      "balanced_accuracy": 0.534048589266934,
+      "attack_precision": 0.9358511524576506,
+      "attack_recall": 0.07434042177711109,
+      "attack_f1": 0.13773935789753336,
+      "benign_false_positive_rate": 0.006243243243243243,
+      "attack_roc_auc": 0.7821807630669582,
+      "attack_average_precision": 0.7923615407451958,
+      "confusion_matrix": [
+        [
+          36769,
+          231
+        ],
+        [
+          41962,
+          3370
+        ]
+      ]
+    },
+    "union_validation_fpr_0_5pct": {
+      "accuracy": 0.9308166933877472,
+      "macro_f1": 0.9302164218621133,
+      "balanced_accuracy": 0.9309651794210163,
+      "attack_precision": 0.9439913970785913,
+      "attack_recall": 0.9294979264096003,
+      "attack_f1": 0.9366886003912502,
+      "benign_false_positive_rate": 0.06756756756756757,
+      "attack_roc_auc": null,
+      "attack_average_precision": null,
+      "confusion_matrix": [
+        [
+          34500,
+          2500
+        ],
+        [
+          3196,
+          42136
+        ]
+      ]
+    }
+  },
+  "note": "Isolation Forest is an unsupervised proxy, not the app's synthetic-trained Autoencoder. Separate dataset schema; UNSW commercial use requires author permission."
+}

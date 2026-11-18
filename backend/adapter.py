@@ -111,7 +111,7 @@ class FeatureAdapter:
             np.ndarray: Scaled feature array of shape (N, 91), clipped to [-10, 10].
         """
         if isinstance(raw_data, dict):
-            df = pd.DataFrame([raw_data])
+            return self._transform_single(raw_data)
         elif isinstance(raw_data, list):
             df = pd.DataFrame(raw_data)
         elif isinstance(raw_data, pd.DataFrame):
@@ -139,3 +139,55 @@ class FeatureAdapter:
         X_clipped = np.clip(X_scaled, -10.0, 10.0)
 
         return X_clipped
+
+    def _transform_single(self, raw_flow: Dict[str, Any]) -> np.ndarray:
+        """Fast path for live one-flow requests, avoiding pandas row construction."""
+        try:
+            row = {name: float(raw_flow.get(name, 0.0)) for name in self.expected_features}
+
+            def value(name: str, default: float = 0.0) -> float:
+                return float(raw_flow.get(name, default))
+
+            fwd_pkts = value("Total Fwd Packets", 1.0)
+            bwd_pkts = value("Total Backward Packets")
+            fwd_bytes = value("Total Length of Fwd Packets")
+            bwd_bytes = value("Total Length of Bwd Packets")
+            total_packets = fwd_pkts + bwd_pkts
+            total_bytes = fwd_bytes + bwd_bytes
+            if total_packets == 0:
+                total_packets = 1.0
+            if total_bytes == 0:
+                total_bytes = 1.0
+
+            packet_mean = value("Packet Length Mean")
+            packet_min = value("Min Packet Length")
+            packet_std = value("Packet Length Std")
+            fwd_iat_std = value("Fwd IAT Std")
+            fwd_iat_mean = value("Fwd IAT Mean")
+
+            row.update({
+                "fwd_bwd_pkt_ratio": fwd_pkts / (bwd_pkts + 1.0),
+                "fwd_bwd_byte_ratio": fwd_bytes / (bwd_bytes + 1.0),
+                "fwd_pkt_ratio": fwd_pkts / total_packets,
+                "bwd_pkt_ratio": bwd_pkts / total_packets,
+                "pkt_len_skew_proxy": (packet_mean - packet_min) / (packet_std + 1.0),
+                "byte_per_packet": total_bytes / total_packets,
+                "fwd_pkt_len_spread": value("Fwd Packet Length Max") - value("Fwd Packet Length Min"),
+                "bwd_pkt_len_spread": value("Bwd Packet Length Max") - value("Bwd Packet Length Min"),
+                "flag_density": sum(value(name) for name in (
+                    "FIN Flag Count", "SYN Flag Count", "RST Flag Count",
+                    "PSH Flag Count", "ACK Flag Count", "URG Flag Count"
+                )) / total_packets,
+                "fwd_iat_jitter": fwd_iat_std / (fwd_iat_mean + 1.0),
+                "flow_pkt_rate_log": np.log1p(max(0.0, value("Flow Packets/s"))),
+                "flow_byte_rate_log": np.log1p(max(0.0, value("Flow Bytes/s"))),
+                "active_idle_ratio": value("Active Mean") / (value("Idle Mean") + 1.0)
+            })
+        except (TypeError, ValueError):
+            # Preserve the DataFrame path for unusual non-numeric input.
+            return self.transform(pd.DataFrame([raw_flow]))
+
+        values = np.asarray([row[name] for name in self.expected_features], dtype=np.float64)
+        values = np.nan_to_num(values, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        scaled = self.scaler.transform(values.reshape(1, -1))
+        return np.clip(scaled, -10.0, 10.0)

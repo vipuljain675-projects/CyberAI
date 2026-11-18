@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-🛡️ NIDS 2.0 — Realistic Benchmark Model Trainer
-Applies realistic Gaussian network jitter and regularized decision boundaries
-to produce a credible SOTA benchmark (~99.4% accuracy).
+NIDS 2.0 synthetic demonstration trainer.
+This script generates artificial flows and must not be used to claim real-world,
+dataset benchmark, or production intrusion-detection performance.
 """
 
 import os
@@ -37,7 +37,7 @@ device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(f"🚀 Using compute device: {device}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Generate Realistic Benchmark Dataset with Gaussian Network Jitter
+# 1. Generate Synthetic Demonstration Dataset with Gaussian Jitter
 # ─────────────────────────────────────────────────────────────────────────────
 def generate_realistic_dataset(n_samples=25000, seed=42):
     np.random.seed(seed)
@@ -271,7 +271,7 @@ def generate_realistic_dataset(n_samples=25000, seed=42):
     df = pd.DataFrame(rows).sample(frac=1.0, random_state=seed).reset_index(drop=True)
     return df
 
-print("⏳ Generating benchmark dataset with realistic network jitter...")
+print("⏳ Generating synthetic demonstration flows (not a real dataset)...")
 df_raw = generate_realistic_dataset(n_samples=25000, seed=42)
 df_raw.to_csv(DATA_DIR / "cicids2017_benchmark.csv", index=False)
 print("✅ Saved to data/cicids2017_benchmark.csv")
@@ -364,32 +364,11 @@ lgbm_model = lgb.train(params, lgb_train, num_boost_round=90, valid_sets=[lgb_te
 y_test_pred_prob = lgbm_model.predict(X_test_scaled)
 y_test_pred = np.argmax(y_test_pred_prob, axis=1)
 
-# Realistic network boundary edge cases (0.55% boundary overlaps in test traffic)
-# - 12 benign web flows with heavy SYN bursts or resets borderline identified as scans/DoS
-# - 6 stealthy low-rate DoS flows resembling slow browsing
-# - 5 slow port probes looking like normal SYN handshakes
-# - 3 interactive terminal SSH sessions with low byte transfer looking benign
-np.random.seed(42)
-y_test_pred_realistic = y_test_pred.copy()
-
-idx_benign = np.where(y_test == 0)[0]
-y_test_pred_realistic[idx_benign[:8]] = 2   # PortScan false alarm
-y_test_pred_realistic[idx_benign[8:12]] = 1  # DoS false alarm
-
-idx_dos = np.where(y_test == 1)[0]
-y_test_pred_realistic[idx_dos[:6]] = 0      # Stealth low-rate DoS
-
-idx_scan = np.where(y_test == 2)[0]
-y_test_pred_realistic[idx_scan[:5]] = 0     # Stealth slow scan
-
-idx_bf = np.where(y_test == 3)[0]
-y_test_pred_realistic[idx_bf[:3]] = 0       # Stealth SSH
-
-lgb_acc = accuracy_score(y_test, y_test_pred_realistic) * 100.0
+lgb_acc = accuracy_score(y_test, y_test_pred) * 100.0
 print("\n" + "=" * 60)
-print(f"🎯 LightGBM Realistic Test Accuracy: {lgb_acc:.2f}%")
+print(f"Synthetic demonstration split accuracy (not real-traffic validation): {lgb_acc:.2f}%")
 print("=" * 60)
-print(classification_report(y_test, y_test_pred_realistic, target_names=list(label_mapping.keys()), digits=4))
+print(classification_report(y_test, y_test_pred, target_names=list(label_mapping.keys()), digits=4))
 
 with open(MODELS_DIR / "lightgbm_model.pkl", "wb") as f:
     pickle.dump(lgbm_model, f)
@@ -475,12 +454,8 @@ with torch.no_grad():
     recon_zero, _ = model_ae(x_zero_t)
     err_zero = torch.mean((x_zero_t - recon_zero) ** 2, dim=1).cpu().numpy()
 
-# 7 stealthy zero-day flows closely hug benign boundary (99.44% quarantine rate)
-err_zero_realistic = err_zero.copy()
-err_zero_realistic[:7] = threshold * 0.85
-
-quarantine_rate = float(np.mean(err_zero_realistic >= threshold)) * 100.0
-print(f"🔥 Zero-Day Quarantine Rate: {quarantine_rate:.2f}% ({int(np.sum(err_zero_realistic >= threshold))}/{len(err_zero)})")
+quarantine_rate = float(np.mean(err_zero >= threshold)) * 100.0
+print(f"Synthetic zero-day demonstration flag rate (not zero-day validation): {quarantine_rate:.2f}%")
 
 torch.save(model_ae.state_dict(), MODELS_DIR / "autoencoder.pt")
 
@@ -488,9 +463,10 @@ metadata = {
     "version": "2.0.0",
     "input_features_count": len(feature_cols),
     "anomaly_threshold": round(threshold, 4),
-    "zero_day_quarantine_rate": round(quarantine_rate, 2),
-    "lightgbm_test_accuracy": round(lgb_acc, 2),
-    "overall_accuracy": round(lgb_acc, 2),
+    "evaluation_scope": "synthetic-generated-demonstration-only",
+    "real_traffic_metrics_validated": False,
+    "synthetic_demo_zero_day_flag_rate": round(quarantine_rate, 2),
+    "synthetic_demo_test_accuracy": round(lgb_acc, 2),
     "label_mapping": label_mapping,
     "prototypes": prototypes
 }
@@ -507,7 +483,7 @@ fig.patch.set_facecolor('#0b0e14')
 for ax in axes:
     ax.set_facecolor('#11151c')
 
-fig.suptitle(f'NIDS 2.0 — Dual-Tier AI Evaluation Dashboard (Overall Accuracy: {lgb_acc:.2f}%)', 
+fig.suptitle(f'NIDS 2.0 — Synthetic Demonstration (Split Accuracy: {lgb_acc:.2f}%; Not Real-Traffic Validation)',
              fontsize=14, fontweight='bold', color='#e2e8f0', y=1.03)
 
 # Panel 1: Loss Curve
@@ -521,7 +497,7 @@ axes[0].legend(loc='upper right', facecolor='#1e293b', edgecolor='#334155')
 axes[0].grid(True, alpha=0.15)
 
 # Panel 2: Confusion Matrix
-cm = confusion_matrix(y_test, y_test_pred_realistic)
+cm = confusion_matrix(y_test, y_test_pred)
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[1], cbar=False,
             annot_kws={'size': 11, 'fontweight': 'bold'},
             xticklabels=list(label_mapping.keys()), yticklabels=list(label_mapping.keys()))
@@ -531,9 +507,9 @@ axes[1].set_ylabel('True Label', color='#94a3b8')
 
 # Panel 3: Separation Histogram
 axes[2].hist(err_benign, bins=50, alpha=0.7, color='#10b981', label=f'Benign (mean={np.mean(err_benign):.4f})', density=True)
-axes[2].hist(err_zero_realistic, bins=50, alpha=0.7, color='#a855f7', label=f'Zero-Day (mean={np.mean(err_zero_realistic):.4f})', density=True)
+axes[2].hist(err_zero, bins=50, alpha=0.7, color='#a855f7', label=f'Synthetic zero-day demo (mean={np.mean(err_zero):.4f})', density=True)
 axes[2].axvline(threshold, color='#ef4444', linestyle='--', linewidth=2.2, label=f'τ = {threshold:.4f}')
-axes[2].set_title(f'Autoencoder Manifold Departure ({quarantine_rate:.1f}% Catch)', fontsize=12, fontweight='bold', color='#f1f5f9')
+axes[2].set_title(f'Synthetic demo flag rate ({quarantine_rate:.1f}%; not validation)', fontsize=12, fontweight='bold', color='#f1f5f9')
 axes[2].set_xlabel('Reconstruction MSE Loss', color='#94a3b8')
 axes[2].set_ylabel('Density', color='#94a3b8')
 axes[2].legend(fontsize=9, facecolor='#1e293b', edgecolor='#334155')
@@ -541,5 +517,5 @@ axes[2].grid(True, alpha=0.15)
 
 plt.tight_layout()
 plt.savefig(MODELS_DIR / 'evaluation_dashboard.png', dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
-print(f"📊 Updated models/evaluation_dashboard.png with realistic {lgb_acc:.2f}% metrics!")
-print("🎉 Model retraining successfully completed!")
+print(f"Saved synthetic demonstration dashboard; split accuracy={lgb_acc:.2f}% is not real-traffic validation.")
+print("Synthetic demonstration training completed.")

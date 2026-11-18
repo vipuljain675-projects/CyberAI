@@ -45,16 +45,21 @@ Physical NIC (en0/eth0)
 
 ---
 
-## 📊 Benchmark Results
+## 📊 Evaluation Status
 
-| Metric | Tier-1 (LightGBM) | Tier-2 (Autoencoder) | Combined Dual-Tier |
-|:---|:---:|:---:|:---:|
-| Known Attacks Accuracy / F1 | **99.45% / 0.994** | N/A | **99.45%** |
-| Zero-Day Quarantine Rate | 0% (missed signature) | **99.44% (1243/1250)** | **99.44%** |
-| Mean Benign MSE | N/A | **0.0020** | Conforms |
-| Mean Zero-Day MSE | N/A | **14.4702** (7,235x) | Extreme Departure |
-| Calibrated Threshold (τ) | N/A | **0.0155** | Operating Boundary |
-| Inference Latency | < 0.5 ms | ~9.5 ms (MPS GPU) | Sub-millisecond scale |
+The checked-in training script generates synthetic flows; it does not train or
+evaluate on CIC-IDS2017 or captured traffic. Its test predictions and zero-day
+quarantine count have also been manually altered to produce boundary errors.
+Therefore the previously listed 99.45% accuracy and 99.44% quarantine rate are
+synthetic demo outputs, not valid IDS performance metrics. Real-capture accuracy,
+macro-F1, balanced accuracy, per-class precision/recall, ROC-AUC, and false
+positive rate have not been re-established from the files currently in this repo.
+Do not present those demo figures as product or industry validation.
+
+The intended next evaluation is to train on capture days that are disjoint from
+the held-out capture day, report per-class metrics and false-positive rate, and
+keep threshold/model selection separate from the final test capture. CIC-IDS2017
+is available from the [official UNB CIC dataset page](https://www.unb.ca/cic/datasets/ids-2017.html).
 
 ---
 
@@ -79,12 +84,12 @@ Physical NIC (en0/eth0)
 │   ├── lightgbm_model.pkl  # LightGBM booster (776 KB)
 │   ├── scaler.pkl          # RobustScaler (benign distribution)
 │   ├── feature_list.json   # 91-feature canonical schema
-│   ├── metadata.json       # τ=0.0687, 8 latent prototypes
+│   ├── metadata.json       # Model threshold and latent prototypes
 │   └── evaluation_dashboard.png
 ├── notebooks/
 │   └── 01_nids_model_training.ipynb  # Google Colab training notebook
-├── data/
-│   └── generate_dataset.py # CICIDS2017 flow generator (25,000 flows)
+├── evaluation/             # UNSW-NB15 evaluation experiments and reports
+├── data/                   # Dataset files are not included
 ├── scripts/
 │   └── run_traffic_agent.py # Legacy Python attack emulator
 ├── requirements.txt
@@ -108,8 +113,8 @@ Physical NIC (en0/eth0)
 ### Step 1 — Clone & Python Environment
 
 ```bash
-git clone <your-repository-url>
-cd "Xebia Project"
+git clone https://github.com/vipuljain675-projects/CyberAI.git
+cd CyberAI
 
 # Create virtual environment
 python3 -m venv .venv
@@ -144,17 +149,9 @@ cd ..
 .venv/bin/python backend/test_backend.py
 ```
 
-Expected output:
-```
-✅ RiskEngine initialized on: mps
-   Calibrated threshold (tau): 0.0687
-   Cluster prototypes loaded : 8
-🔎 [BENIGN]   MSE: 0.0007 → ALLOW ✅
-🔎 [DoS]      LightGBM Signature → BLOCK_FLOW 🔴
-🔎 [PortScan] LightGBM Signature → BLOCK_FLOW 🟠
-🔎 [ZeroDay]  MSE: 16.357  → QUARANTINE_HOST 🟣
-🎉 All 4 traffic categories validated!
-```
+This runs the repository's diagnostic checks against the bundled synthetic demo
+models. Their output is not evidence of performance on captured or benchmark
+traffic.
 
 ---
 
@@ -164,7 +161,7 @@ Open **2 terminals** and run simultaneously:
 
 #### Terminal 1 — Python AI Backend
 ```bash
-cd "Xebia Project"
+cd CyberAI
 source .venv/bin/activate
 uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -175,7 +172,7 @@ API Docs: **`http://127.0.0.1:8000/docs`**
 #### Terminal 2 — Rust Wire Engine
 
 ```bash
-cd "Xebia Project/engine"
+cd CyberAI/engine
 source "$HOME/.cargo/env"
 ```
 
@@ -244,12 +241,10 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/simulate/flow \
 - **Log-Rate:** `log(1 + Pkts/s)` — compresses DoS dynamic ranges
 
 ### Autoencoder (Tier-2)
-Architecture: `91 → 64 → 32 → 16 → 32 → 64 → 91` with BatchNorm1d + LeakyReLU(0.2)
-
-Loss: MSE = (1/91) * Σ(xⱼ - x̂ⱼ)²
-
-Threshold τ = 0.0687 (98.5th percentile of benign validation errors)
-Any flow with MSE ≥ τ → QUARANTINE_HOST
+Architecture: `91 → 64 → 32 → 16 → 32 → 64 → 91` with BatchNorm1d + LeakyReLU(0.2).
+The bundled operating threshold is read from `models/metadata.json`; it comes
+from synthetic demonstration training and has not been validated on captured
+traffic.
 
 ### Latent Prototypes
 8 KMeans centroids in 16-D bottleneck. Novelty distance:
@@ -262,16 +257,19 @@ d(z) = min_k ‖z − Centroid_k‖₂
 | Threat | Detection | Action | Mechanism |
 |:---|:---|:---:|:---|
 | BENIGN | Dual-Tier Clear | `ALLOW` | No penalty — passes through |
-| DoS Flood | Tier-1 LightGBM | `BLOCK_FLOW` | `iptables -A INPUT -s <IP> -j DROP` |
-| PortScan | Tier-1 LightGBM | `BLOCK_FLOW` | IP added to perimeter blocklist |
-| Zero-Day | Tier-2 Autoencoder | `QUARANTINE_HOST` | Host isolated to quarantine VLAN |
+| Known class | Tier-1 LightGBM | Backend verdict | Reported to the API and dashboard |
+| Anomalous flow | Tier-2 Autoencoder | Backend verdict | Reported to the API and dashboard |
 
 ---
 
 ## ⚠️ Known Limitations
 
-### Live Mode False Positives (Domain Shift)
-In `--live` mode, modern TLS 1.3 traffic (YouTube, cloud sync, etc.) may trigger false positives. The model was trained on CICIDS2017 (2017) data — 2024+ traffic has different statistical characteristics. This is the known **distribution shift** problem, solved in production via continuous online retraining.
+### Evaluation and dataset limits
+The bundled training script creates synthetic data. The evaluation scripts under
+`evaluation/` analyze UNSW-NB15 experiments, but these do not validate the
+bundled models on real-time captured traffic. Dataset download instructions,
+experiment reports, and model artifacts should be interpreted within their
+stated evaluation scope.
 
 ### sudo Required for NIC Access
 `libpcap` requires root privileges for promiscuous mode — same requirement as Wireshark and tcpdump.
