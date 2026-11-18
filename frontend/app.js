@@ -6,6 +6,15 @@
  */
 
 // Global Dashboard State
+const EVENT_BUCKET_MS = 60_000;
+const EVENT_BUCKET_LIMIT = 20;
+const EVENT_SERIES = [
+  { label: "DoS", classification: "DoS", color: "#e55353" },
+  { label: "PortScan", classification: "PortScan", color: "#f59e0b" },
+  { label: "Zero-Day", classification: "Infiltration_ZeroDay", color: "#a78bfa" },
+  { label: "Brute Force", classification: "BruteForce", color: "#9bb9bb" }
+];
+
 const BACKEND_BASE = (window.location.port === "8000" && (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"))
   ? ""
   : "http://127.0.0.1:8000";
@@ -24,6 +33,9 @@ const state = {
   prototypes: [],
   flowsHistory: [],
   flowReceiveTimes: [],
+  eventBuckets: new Map(),
+  eventWindowStart: null,
+  latestEventBucket: null,
   isStreamPaused: false,
   topologyZoom: 1,
   selectedEndpoint: null,
@@ -134,58 +146,23 @@ function initCharts() {
     }
   });
 
-  // 2. Notable Events Over Time (Multi-line Timeline)
+  // 2. Classified attack flows per minute.
   const ctxEvents = document.getElementById("chart-events-timeline").getContext("2d");
   state.charts.eventsTimeline = new Chart(ctxEvents, {
     type: "line",
     data: {
       labels: [],
       datasets: [
-        {
-          label: "Benign",
+        ...EVENT_SERIES.map(series => ({
+          label: series.label,
           data: [],
-          borderColor: "#22c55e",
+          borderColor: series.color,
           borderWidth: 1.8,
           pointRadius: 2,
           pointHoverRadius: 4,
-          tension: 0.3
-        },
-        {
-          label: "DoS",
-          data: [],
-          borderColor: "#e55353",
-          borderWidth: 1.8,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          tension: 0.3
-        },
-        {
-          label: "PortScan",
-          data: [],
-          borderColor: "#f59e0b",
-          borderWidth: 1.8,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          tension: 0.3
-        },
-        {
-          label: "Zero-Day",
-          data: [],
-          borderColor: "#a78bfa",
-          borderWidth: 1.8,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          tension: 0.3
-        },
-        {
-          label: "Brute Force",
-          data: [],
-          borderColor: "#9bb9bb",
-          borderWidth: 1.8,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          tension: 0.3
-        }
+          stepped: "middle",
+          fill: false
+        }))
       ]
     },
     options: {
@@ -199,8 +176,19 @@ function initCharts() {
         },
         y: {
           grid: { color: gridColor },
-          ticks: { color: tickColor, font: monoFont, stepSize: 1 },
-          beginAtZero: true
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Flows / minute",
+            color: tickColor,
+            font: sansFont
+          },
+          ticks: {
+            color: tickColor,
+            font: monoFont,
+            precision: 0,
+            maxTicksLimit: 6
+          }
         }
       },
       plugins: {
@@ -683,10 +671,55 @@ function insertTableRow(flow) {
 }
 
 function updateCharts(flow) {
-  const timeLabel = new Date().toLocaleTimeString().split(" ")[0];
+  const receivedAt = Date.parse(flow.timestamp);
+  const eventTime = Number.isFinite(receivedAt) ? receivedAt : Date.now();
+  const eventBucket = Math.floor(eventTime / EVENT_BUCKET_MS) * EVENT_BUCKET_MS;
+  const chartEvents = state.charts.eventsTimeline;
+  const classificationIndex = EVENT_SERIES.findIndex(
+    series => series.classification === flow.classification
+  );
+
+  if (state.latestEventBucket === null || eventBucket > state.latestEventBucket) {
+    state.latestEventBucket = eventBucket;
+  }
+  if (state.eventWindowStart === null) state.eventWindowStart = eventBucket;
+
+  const firstVisibleBucket = Math.max(
+    state.eventWindowStart,
+    state.latestEventBucket - (EVENT_BUCKET_LIMIT - 1) * EVENT_BUCKET_MS
+  );
+  state.eventWindowStart = firstVisibleBucket;
+
+  if (eventBucket >= firstVisibleBucket && eventBucket <= state.latestEventBucket) {
+    if (!state.eventBuckets.has(eventBucket)) {
+      state.eventBuckets.set(eventBucket, EVENT_SERIES.map(() => 0));
+    }
+    if (classificationIndex >= 0) {
+      state.eventBuckets.get(eventBucket)[classificationIndex] += 1;
+    }
+  }
+
+  for (const bucket of state.eventBuckets.keys()) {
+    if (bucket < firstVisibleBucket || bucket > state.latestEventBucket) {
+      state.eventBuckets.delete(bucket);
+    }
+  }
+
+  const visibleBuckets = [];
+  for (let bucket = firstVisibleBucket; bucket <= state.latestEventBucket; bucket += EVENT_BUCKET_MS) {
+    visibleBuckets.push(bucket);
+  }
+  chartEvents.data.labels = visibleBuckets.map(bucket =>
+    new Date(bucket).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  );
+  chartEvents.data.datasets.forEach((dataset, index) => {
+    dataset.data = visibleBuckets.map(bucket => state.eventBuckets.get(bucket)?.[index] ?? 0);
+  });
+  chartEvents.update("none");
 
   // 1. Update MSE Departure Chart
   const chartMSE = state.charts.mseTimeline;
+  const timeLabel = new Date(eventTime).toLocaleTimeString().split(" ")[0];
   chartMSE.data.labels.push(timeLabel);
   chartMSE.data.datasets[0].data.push(flow.reconstruction_error);
   chartMSE.data.datasets[1].data.push(state.threshold);
@@ -697,22 +730,6 @@ function updateCharts(flow) {
     chartMSE.data.datasets[1].data.shift();
   }
   chartMSE.update("none");
-
-  // 2. Update event-type timeline.
-  const chartEvents = state.charts.eventsTimeline;
-  chartEvents.data.labels.push(timeLabel);
-
-  chartEvents.data.datasets[0].data.push(flow.classification === "BENIGN" ? 1 : 0);
-  chartEvents.data.datasets[1].data.push(flow.classification === "DoS" ? 1 : 0);
-  chartEvents.data.datasets[2].data.push(flow.classification === "PortScan" ? 1 : 0);
-  chartEvents.data.datasets[3].data.push(flow.classification === "Infiltration_ZeroDay" ? 1 : 0);
-  chartEvents.data.datasets[4].data.push(flow.classification === "BruteForce" ? 1 : 0);
-
-  if (chartEvents.data.labels.length > 20) {
-    chartEvents.data.labels.shift();
-    chartEvents.data.datasets.forEach(dataset => dataset.data.shift());
-  }
-  chartEvents.update("none");
 
   // 3. Update Splunk Donut Chart & Center Stats
   const highCount = state.zeroDayCount + state.flowsHistory.filter(f => f.classification === "DoS").length;
