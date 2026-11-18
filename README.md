@@ -9,7 +9,7 @@ The inference pipeline uses a LightGBM classifier for known traffic classes and 
 - **Capture and flow aggregation:** Rust, `pcap`, and a five-tuple flow representation.
 - **Inference API:** FastAPI with LightGBM classification and autoencoder anomaly scoring.
 - **Dashboard:** Browser interface receiving live updates over WebSocket.
-- **Evaluation:** Synthetic demonstration data and UNSW-NB15 experiments. Results are limited to the datasets and procedures documented in the repository.
+- **Model artifacts:** Bundled demonstration models for exercising the application pipeline; they are not validated for operational network detection.
 
 ## Architecture
 
@@ -36,7 +36,6 @@ engine/        Rust packet capture and flow aggregation
 frontend/      Dashboard assets
 models/        Bundled demonstration model artifacts and metadata
 notebooks/     Model training notebook
-evaluation/    Dataset evaluation experiments and reports
 scripts/       Traffic generation utilities
 requirements.txt
 ```
@@ -109,11 +108,9 @@ source .venv/bin/activate
 python scripts/run_traffic_agent.py
 ```
 
-## Evaluation scope
+## Model scope
 
-The checked-in training script generates synthetic flows. Its demonstration outputs, including model scores and quarantine counts, are not validated IDS performance metrics. Real-capture accuracy, macro-F1, balanced accuracy, per-class precision and recall, ROC-AUC, and false-positive rate have not been established for the bundled models.
-
-The `evaluation/` directory contains UNSW-NB15 experiments. These experiments do not establish performance on live captured traffic. For a defensible benchmark, separate training, model selection, and final test captures; report per-class metrics and false-positive rates on held-out data. The [official CIC-IDS2017 dataset page](https://www.unb.ca/cic/datasets/ids-2017.html) provides one source of benchmark data.
+The checked-in trainer generates synthetic flows. Its model scores and demonstration outputs are not validated IDS performance metrics. The bundled models have not been validated on captured traffic or an independent benchmark dataset.
 
 ## Implementation notes
 

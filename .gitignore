@@ -29,7 +29,6 @@ Cargo.lock
 
 # Large Benchmark Data (Can be regenerated with python data/generate_dataset.py)
 data/*.csv
-data/unsw_nb15/
 data/cicids2018/
 
 # IDE & Editor Settings
