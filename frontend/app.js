@@ -6,14 +6,6 @@
  */
 
 // Global Dashboard State
-const FLOW_CLASSES = [
-  { label: "Benign", classification: "BENIGN", color: "#22c55e" },
-  { label: "DoS", classification: "DoS", color: "#e55353" },
-  { label: "PortScan", classification: "PortScan", color: "#f59e0b" },
-  { label: "Zero-Day", classification: "Infiltration_ZeroDay", color: "#a78bfa" },
-  { label: "Brute Force", classification: "BruteForce", color: "#9bb9bb" }
-];
-
 const BACKEND_BASE = (window.location.port === "8000" && (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"))
   ? ""
   : "http://127.0.0.1:8000";
@@ -32,7 +24,6 @@ const state = {
   prototypes: [],
   flowsHistory: [],
   flowReceiveTimes: [],
-  scoreTimelineClasses: [],
   isStreamPaused: false,
   topologyZoom: 1,
   selectedEndpoint: null,
@@ -143,7 +134,7 @@ function initCharts() {
     }
   });
 
-  // 2. Per-flow heuristic model score, colored by predicted class.
+  // 2. Notable Events Over Time (Multi-line Timeline)
   const ctxEvents = document.getElementById("chart-events-timeline").getContext("2d");
   state.charts.eventsTimeline = new Chart(ctxEvents, {
     type: "line",
@@ -151,16 +142,49 @@ function initCharts() {
       labels: [],
       datasets: [
         {
-          label: "Heuristic anomaly score",
+          label: "Benign",
           data: [],
-          borderColor: "#8b9cff",
+          borderColor: "#22c55e",
           borderWidth: 1.8,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          pointBackgroundColor: [],
-          pointBorderColor: [],
-          tension: 0.15,
-          fill: false
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
+        },
+        {
+          label: "DoS",
+          data: [],
+          borderColor: "#e55353",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
+        },
+        {
+          label: "PortScan",
+          data: [],
+          borderColor: "#f59e0b",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
+        },
+        {
+          label: "Zero-Day",
+          data: [],
+          borderColor: "#a78bfa",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
+        },
+        {
+          label: "Brute Force",
+          data: [],
+          borderColor: "#9bb9bb",
+          borderWidth: 1.8,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          tension: 0.3
         }
       ]
     },
@@ -175,33 +199,12 @@ function initCharts() {
         },
         y: {
           grid: { color: gridColor },
-          beginAtZero: true,
-          min: 0,
-          max: 100,
-          title: {
-            display: true,
-            text: "Heuristic score (0–100)",
-            color: tickColor,
-            font: sansFont
-          },
-          ticks: {
-            color: tickColor,
-            font: monoFont,
-            precision: 0,
-            maxTicksLimit: 6
-          }
+          ticks: { color: tickColor, font: monoFont, stepSize: 1 },
+          beginAtZero: true
         }
       },
       plugins: {
-        legend: { display: false }, // Class colors are shown in the custom legend.
-        tooltip: {
-          callbacks: {
-            label(context) {
-              const classification = state.scoreTimelineClasses[context.dataIndex] || "Unknown";
-              return `${classification}: ${context.parsed.y.toFixed(1)} / 100 (heuristic)`;
-            }
-          }
-        }
+        legend: { display: false } // Custom legend already rendered in HTML
       }
     }
   });
@@ -649,25 +652,11 @@ function insertTableRow(flow) {
   const timeStr = flow.timestamp ? flow.timestamp.split("T")[1].replace("Z", "").slice(0, 8) : new Date().toLocaleTimeString();
   const mseColor = flow.reconstruction_error >= state.threshold ? "var(--color-red)" : "var(--color-green)";
 
-  let tierDisplay = flow.detection_tier;
-  let tierPillClass = "tier-pill-blue";
-  if (flow.detection_tier && flow.detection_tier.includes("Deep Autoencoder")) {
-    tierDisplay = "Tier-2 Autoencoder";
-    tierPillClass = "tier-pill-purple";
-  } else if (flow.detection_tier && flow.detection_tier.includes("LightGBM")) {
-    tierDisplay = "Tier-1 LightGBM";
-    tierPillClass = "tier-pill-blue";
-  } else if (flow.detection_tier && flow.detection_tier.includes("Dual-Tier")) {
-    tierDisplay = "Dual-Tier Clear";
-    tierPillClass = "tier-pill-green";
-  }
-
   tr.innerHTML = `
     <td>${timeStr}</td>
     <td>${flow.source_ip}</td>
     <td>${flow.destination_ip}:${flow.destination_port}</td>
     <td><span class="badge-siem ${badgeClass}">${flow.classification}</span></td>
-    <td><span class="tier-badge ${tierPillClass}" title="${flow.detection_tier}">${tierDisplay}</span></td>
     <td style="color:${mseColor}">${flow.reconstruction_error.toFixed(4)}</td>
     <td><span class="action-pill ${actionClass}">${actionText}</span></td>
   `;
@@ -680,32 +669,10 @@ function insertTableRow(flow) {
 }
 
 function updateCharts(flow) {
-  const receivedAt = Date.parse(flow.timestamp);
-  const eventTime = Number.isFinite(receivedAt) ? receivedAt : Date.now();
-  const chartEvents = state.charts.eventsTimeline;
-  const score = Number(flow.anomaly_score);
-  if (Number.isFinite(score)) {
-    const classColor = FLOW_CLASSES.find(item => item.classification === flow.classification)?.color || "#94a3b8";
-    const dataset = chartEvents.data.datasets[0];
-    chartEvents.data.labels.push(new Date(eventTime).toLocaleTimeString().split(" ")[0]);
-    dataset.data.push(score);
-    dataset.pointBackgroundColor.push(classColor);
-    dataset.pointBorderColor.push(classColor);
-    state.scoreTimelineClasses.push(flow.classification || "Unknown");
-
-    if (chartEvents.data.labels.length > 20) {
-      chartEvents.data.labels.shift();
-      dataset.data.shift();
-      dataset.pointBackgroundColor.shift();
-      dataset.pointBorderColor.shift();
-      state.scoreTimelineClasses.shift();
-    }
-  }
-  chartEvents.update("none");
+  const timeLabel = new Date().toLocaleTimeString().split(" ")[0];
 
   // 1. Update MSE Departure Chart
   const chartMSE = state.charts.mseTimeline;
-  const timeLabel = new Date(eventTime).toLocaleTimeString().split(" ")[0];
   chartMSE.data.labels.push(timeLabel);
   chartMSE.data.datasets[0].data.push(flow.reconstruction_error);
   chartMSE.data.datasets[1].data.push(state.threshold);
@@ -716,6 +683,22 @@ function updateCharts(flow) {
     chartMSE.data.datasets[1].data.shift();
   }
   chartMSE.update("none");
+
+  // 2. Update event-type timeline.
+  const chartEvents = state.charts.eventsTimeline;
+  chartEvents.data.labels.push(timeLabel);
+
+  chartEvents.data.datasets[0].data.push(flow.classification === "BENIGN" ? 1 : 0);
+  chartEvents.data.datasets[1].data.push(flow.classification === "DoS" ? 1 : 0);
+  chartEvents.data.datasets[2].data.push(flow.classification === "PortScan" ? 1 : 0);
+  chartEvents.data.datasets[3].data.push(flow.classification === "Infiltration_ZeroDay" ? 1 : 0);
+  chartEvents.data.datasets[4].data.push(flow.classification === "BruteForce" ? 1 : 0);
+
+  if (chartEvents.data.labels.length > 20) {
+    chartEvents.data.labels.shift();
+    chartEvents.data.datasets.forEach(dataset => dataset.data.shift());
+  }
+  chartEvents.update("none");
 
   // 3. Update Splunk Donut Chart & Center Stats
   const highCount = state.zeroDayCount + state.flowsHistory.filter(f => f.classification === "DoS").length;

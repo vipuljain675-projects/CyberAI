@@ -1047,48 +1047,20 @@ html, body {
   gap: 8px;
   height: auto;
   min-height: 0;
-  flex: 0 0 auto;
+  flex: 1;
   padding: 12px;
-}
-
-.tier-badge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 2px;
-  display: inline-block;
-  white-space: nowrap;
-}
-
-.tier-pill-purple {
-  background: var(--color-purple-bg);
-  border: 1px solid var(--color-purple-border);
-  color: var(--color-purple);
-}
-
-.tier-pill-blue {
-  background: var(--color-blue-bg);
-  border: 1px solid var(--color-blue-border);
-  color: var(--color-blue);
-}
-
-.tier-pill-green {
-  background: var(--color-green-bg);
-  border: 1px solid var(--color-green-border);
-  color: var(--color-green);
 }
 
 .perf-stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .perf-stat-box {
   background-color: var(--bg-card-sub);
   border: 1px solid var(--border-color);
-  padding: 10px;
+  padding: 8px 6px;
   border-radius: 2px;
 }
 

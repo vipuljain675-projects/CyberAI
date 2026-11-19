@@ -92,10 +92,10 @@
         </div>
       </div>
 
-      <!-- Card 2: Per-flow model score over time -->
+      <!-- Card 2: Notable Events Over Time (Multi-line Timeline) -->
       <div class="soc-card col-5">
         <div class="card-header">
-          <h2 class="card-title">Model score per flow</h2>
+          <h2 class="card-title">Events over time</h2>
           <div class="card-legend-inline">
             <span class="legend-item"><span class="legend-box" style="background:#22c55e;"></span> Benign</span>
             <span class="legend-item"><span class="legend-box" style="background:#e55353;"></span> DoS</span>
@@ -150,10 +150,7 @@
       <!-- Left Column: Real-Time Traffic Triage Stream Table (Splunk SIEM Table) -->
       <div class="soc-card col-8" id="investigations">
         <div class="card-header">
-          <div class="card-title-group">
-            <h2 class="card-title">Live Activity</h2>
-            <span class="stream-badge"><span class="status-dot dot-green pulse"></span> STREAMING</span>
-          </div>
+          <h2 class="card-title">Live Activity</h2>
           <div class="card-filter-group">
             <span class="filter-caption">Filter:</span>
             <select id="filter-classification" class="siem-select">
@@ -174,7 +171,6 @@
                   <th>SOURCE IP</th>
                   <th>DESTINATION</th>
                   <th>TYPE</th>
-                  <th>DETECTED BY</th>
                   <th>MODEL ERROR</th>
                   <th>ACTION</th>
                 </tr>
@@ -189,9 +185,6 @@
 
       <!-- Right Column: Performance & Open Incident Diagnostics -->
       <div class="soc-card col-4">
-        <div class="card-header">
-          <h2 class="card-title">Speed & Detection</h2>
-        </div>
         <div class="card-body perf-body">
           <div class="perf-stats-grid">
             <div class="perf-stat-box">
@@ -217,7 +210,6 @@
       <div class="soc-card col-4 empty-card topology-card" id="topology-card">
         <div class="card-header topology-header">
           <div class="card-title-group">
-            <h2 class="card-title">Network Topology</h2>
             <span class="stream-badge"><span class="status-dot dot-green pulse"></span> LIVE</span>
           </div>
           <div class="topology-controls" aria-label="Topology zoom controls">
